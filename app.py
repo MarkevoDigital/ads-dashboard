@@ -19,6 +19,7 @@ from __future__ import annotations
 import atexit
 import os
 import secrets
+import threading
 from datetime import datetime
 from functools import wraps
 
@@ -52,9 +53,19 @@ def _load_dotenv():
 _load_dotenv()
 config = load_config()
 store = DataStore(config)
-info = store.refresh()
-print(f"[dados] Carregado: {info['source']} "
-      f"(Meta={info['meta_rows']} linhas, Google={info['google_rows']} linhas)")
+
+
+def _initial_load():
+    """Primeira carga em background — nao bloqueia a subida do app (Passenger)."""
+    try:
+        info = store.refresh()
+        print(f"[dados] Carregado: {info['source']} "
+              f"(Meta={info['meta_rows']} linhas, Google={info['google_rows']} linhas)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[dados] carga inicial falhou: {exc}")
+
+
+threading.Thread(target=_initial_load, daemon=True).start()
 
 app = Flask(__name__)
 
@@ -109,7 +120,7 @@ def requires_auth(fn):
 def maybe_refresh():
     """Recarrega se o cache for de um dia anterior ou exceder a validade em horas."""
     if store.updated_at is None:
-        store.refresh(); return
+        return  # carga inicial roda em background; evita bloquear a requisicao
     now = datetime.now()
     stale_dia = store.updated_at.date() < now.date()
     stale_horas = (now - store.updated_at).total_seconds() > AUTO_REFRESH_HORAS * 3600

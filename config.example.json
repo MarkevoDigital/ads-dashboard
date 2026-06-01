@@ -1,0 +1,58 @@
+{
+  "_comentario": "Copie para config.json e preencha. Em producao, prefira variaveis de ambiente (.env) a colocar segredos aqui. Veja DEPLOY.md.",
+
+  "fonte_dados": "auto",
+  "_fonte_dados_opcoes": "auto | sample | api | csv_publicado | service_account",
+
+  "api": {
+    "dias_busca": 60,
+    "meta": {
+      "access_token": "",
+      "ad_account_ids": ["act_000000000000000"],
+      "api_version": "v21.0",
+      "_objective_map": "opcional: sobrescreve objetivo Meta -> nosso bucket",
+      "objective_map": {}
+    },
+    "google_ads": {
+      "developer_token": "",
+      "client_id": "",
+      "client_secret": "",
+      "refresh_token": "",
+      "login_customer_id": "",
+      "customer_ids": ["0000000000"],
+      "_objetivo": "opcional: nome_da_campanha -> objetivo (vendas/leads/...)",
+      "campaign_objective_map": {}
+    }
+  },
+
+  "google_sheets": {
+    "meta_csv_url": "",
+    "google_csv_url": "",
+    "service_account_json": "credentials.json",
+    "spreadsheet_id": "",
+    "aba_meta": "meta_ads",
+    "aba_google": "google_ads"
+  },
+
+  "auth": {
+    "_comentario": "Se 'senha' estiver preenchida, o dashboard exige login (protege o link do cliente).",
+    "usuario": "cliente",
+    "senha": ""
+  },
+
+  "cron": {
+    "_comentario": "Token para o endpoint GET /cron/refresh?token=... usado por cron/tarefa agendada.",
+    "token": ""
+  },
+
+  "atualizacao": {
+    "hora_diaria": "07:00",
+    "fuso": "America/Sao_Paulo",
+    "auto_refresh_horas": 12
+  },
+
+  "servidor": {
+    "host": "127.0.0.1",
+    "port": 5000
+  }
+}

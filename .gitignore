@@ -1,0 +1,23 @@
+# Segredos — NUNCA commitar
+config.json
+clients.json
+credentials.json
+.env
+*.key
+client_secret*.json
+google_refresh_token.txt
+devtoken.txt
+win-ca-bundle.pem
+out.txt
+err.txt
+
+# Ambiente / cache
+.venv/
+__pycache__/
+*.pyc
+
+# Dados de exemplo gerados
+sample_data/*.csv
+
+# Ferramentas locais
+.claude/

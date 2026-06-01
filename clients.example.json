@@ -1,0 +1,24 @@
+{
+  "_comentario": "Copie para clients.json e preencha. Cada cliente loga com seu 'key' (usuario) + 'senha' e ve SOMENTE as contas listadas. O login 'admin' (agencia) ve todos. NUNCA versionar clients.json (esta no .gitignore).",
+
+  "admin": {
+    "senha": "TROQUE-esta-senha-da-agencia"
+  },
+
+  "clientes": [
+    {
+      "key": "luciana",
+      "nome": "Dra. Luciana Pediatra",
+      "senha": "TROQUE-senha-do-cliente",
+      "meta_ad_account_ids": ["act_000000000000000"],
+      "google_customer_ids": ["4844302999"]
+    },
+    {
+      "key": "clinica-sorriso",
+      "nome": "Clínica Sorriso",
+      "senha": "TROQUE-senha-do-cliente",
+      "meta_ad_account_ids": ["act_111111111111111"],
+      "google_customer_ids": ["1968689935"]
+    }
+  ]
+}

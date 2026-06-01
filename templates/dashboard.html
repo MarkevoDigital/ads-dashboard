@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard de Ads — Meta + Google</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">📊</span>
+      <div>
+        <h1>Dashboard de Ads</h1>
+        <p class="sub">Meta Ads + Google Ads · KPIs adaptativos por objetivo</p>
+      </div>
+    </div>
+    <div class="filters">
+      <label>Conta
+        <select id="f-account"><option value="todas">Todas as contas</option></select>
+      </label>
+      <label>Plataforma
+        <select id="f-platform">
+          <option value="todas">Meta + Google</option>
+          <option value="meta">Somente Meta</option>
+          <option value="google">Somente Google</option>
+        </select>
+      </label>
+      <label>Periodo
+        <select id="f-days">
+          <option value="7">Ultimos 7 dias</option>
+          <option value="14">Ultimos 14 dias</option>
+          <option value="30" selected>Ultimos 30 dias</option>
+        </select>
+      </label>
+      <button id="f-refresh" title="Recarregar dados da fonte">⟳ Atualizar</button>
+    </div>
+  </header>
+
+  <div class="meta-bar">
+    <span id="src-info">—</span>
+    <span id="period-info"></span>
+  </div>
+
+  <main id="app">
+    <!-- Comentarios automaticos -->
+    <section class="card">
+      <h2>🧠 Comentarios automaticos</h2>
+      <div id="comments" class="comments"></div>
+    </section>
+
+    <!-- Serie temporal -->
+    <section class="card">
+      <h2>📈 Evolucao diaria</h2>
+      <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
+    </section>
+
+    <!-- Blocos por objetivo -->
+    <section id="objective-blocks"></section>
+
+    <!-- Melhores anuncios -->
+    <section class="card">
+      <h2>🏆 Melhores anuncios</h2>
+      <p class="hint">Criativo destaque por objetivo (com print do anuncio).</p>
+      <div id="best-ads" class="ads-grid"></div>
+    </section>
+
+    <div class="two-col">
+      <!-- Palavras-chave -->
+      <section class="card">
+        <h2>🔑 Palavras-chave (Google Ads)</h2>
+        <div id="keywords-wrap" class="table-wrap"></div>
+      </section>
+
+      <!-- Comparativo plataforma -->
+      <section class="card">
+        <h2>⚖️ Meta x Google</h2>
+        <div class="chart-wrap small"><canvas id="platform-chart"></canvas></div>
+        <div id="platform-table" class="table-wrap"></div>
+      </section>
+    </div>
+
+    <!-- Comparativo de periodo -->
+    <section class="card">
+      <h2>🔁 Periodo atual vs. anterior</h2>
+      <div id="period-wrap" class="table-wrap"></div>
+    </section>
+  </main>
+
+  <div id="loading" class="loading hidden">Carregando…</div>
+  <footer class="foot">Atualizacao automatica diaria · dados via Google Sheets</footer>
+
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

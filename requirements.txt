@@ -1,0 +1,16 @@
+Flask==3.0.3
+pandas==2.2.2
+numpy==1.26.4
+APScheduler==3.10.4
+requests==2.32.3
+gspread==6.1.2
+google-auth==2.32.0
+
+# Servidor de producao (Linux/host). No Windows local nao e necessario.
+gunicorn==22.0.0 ; platform_system != "Windows"
+waitress==3.0.0 ; platform_system == "Windows"
+
+# Apenas para o modo "api" do Google Ads (import tardio). Pesado; instale no servidor.
+# IMPORTANTE: use sempre a versao mais recente — versoes antigas usam versoes de API ja
+# descontinuadas pelo Google e falham com "501 GRPC target method can't be resolved".
+google-ads>=31

@@ -24,13 +24,29 @@ git remote add origin https://github.com/SEU_USUARIO/ads-dashboard.git
 git push -u origin main
 ```
 
-## 3. cPanel: clonar o repositório
-cPanel → **Git Version Control** → **Criar**:
-- **Clone URL**: `https://github.com/SEU_USUARIO/ads-dashboard.git`
-  (repo privado: gere um *Personal Access Token* no GitHub e use
-  `https://SEU_USUARIO:TOKEN@github.com/SEU_USUARIO/ads-dashboard.git`)
-- **Repository Path**: `/home/markevo42/dashboard-ads`
-- Criar. Depois, em **Pull or Deploy → Update from Remote** sempre que houver mudanças.
+## 3. cPanel: clonar o repositório (privado → precisa de acesso)
+
+Repo: **`MarkevoDigital/ads-dashboard`** (privado). Escolha **um** método de acesso:
+
+### Método A — Chave de deploy SSH (recomendado: sem token, sem validade)
+1. cPanel → **Acesso SSH → Manage SSH Keys → Generate a New Key** (sem senha).
+   Em **Public Keys**, clique em **View/Download** e **copie a chave pública** (`ssh-rsa ...`).
+2. GitHub → repo **ads-dashboard → Settings → Deploy keys → Add deploy key** →
+   cole a chave pública → **deixe "Allow write access" DESMARCADO** (só leitura) → salvar.
+3. cPanel → **Git Version Control → Criar**:
+   - **Clone URL**: `ssh://git@github.com/MarkevoDigital/ads-dashboard.git`
+   - **Repository Path**: `/home/markevo42/dashboard-ads`
+   - **Criar**. (Se pedir confirmação de host key do github.com, aceite.)
+
+### Método B — Token de acesso (mais rápido, expira)
+1. GitHub → **Settings → Developer settings → Fine-grained tokens** → gere um token
+   **Read-only** restrito ao repo `ads-dashboard`.
+2. cPanel → **Git Version Control → Criar**:
+   - **Clone URL**: `https://x-access-token:SEU_TOKEN@github.com/MarkevoDigital/ads-dashboard.git`
+   - **Repository Path**: `/home/markevo42/dashboard-ads`
+   - **Criar**.
+
+> Atualizações futuras: **Git Version Control → Manage → Pull or Deploy → Update from Remote**.
 
 ## 4. cPanel: Setup Python App
 cPanel → **Setup Python App** → **Create Application**:

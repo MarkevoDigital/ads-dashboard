@@ -23,6 +23,13 @@ import threading
 from datetime import datetime
 from functools import wraps
 
+# Hospedagem compartilhada (LVE) limita o numero de threads/processos. O numpy/OpenBLAS
+# tenta abrir 1 thread por nucleo (dezenas) e falha ("Resource temporarily unavailable").
+# Forcar 1 thread ANTES de importar pandas/numpy resolve.
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from flask import Flask, Response, g, jsonify, render_template, request

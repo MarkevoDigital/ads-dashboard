@@ -72,8 +72,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                campaign.advertising_channel_type, ad_group.name,
                ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
                metrics.impressions, metrics.clicks, metrics.cost_micros,
-               metrics.conversions, metrics.conversions_value,
-               metrics.video_views, metrics.interactions
+               metrics.conversions, metrics.conversions_value
         FROM keyword_view
         WHERE segments.date BETWEEN '{since}' AND '{until}'
           AND campaign.advertising_channel_type = 'SEARCH'
@@ -82,8 +81,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
         SELECT segments.date, customer.descriptive_name, campaign.name,
                campaign.advertising_channel_type,
                metrics.impressions, metrics.clicks, metrics.cost_micros,
-               metrics.conversions, metrics.conversions_value,
-               metrics.video_views, metrics.interactions
+               metrics.conversions, metrics.conversions_value
         FROM campaign
         WHERE segments.date BETWEEN '{since}' AND '{until}'
           AND campaign.advertising_channel_type != 'SEARCH'
@@ -116,8 +114,8 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "cost": row.metrics.cost_micros / 1_000_000.0,
                         "conversions": float(row.metrics.conversions),
                         "conversion_value": float(row.metrics.conversions_value),
-                        "video_views": float(row.metrics.video_views),
-                        "interactions": float(row.metrics.interactions),
+                        "video_views": 0.0,
+                        "interactions": float(row.metrics.clicks),
                     })
             # Demais campanhas (totais)
             for batch in service.search_stream(customer_id=cid, query=camp_query):
@@ -138,8 +136,8 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "cost": row.metrics.cost_micros / 1_000_000.0,
                         "conversions": float(row.metrics.conversions),
                         "conversion_value": float(row.metrics.conversions_value),
-                        "video_views": float(row.metrics.video_views),
-                        "interactions": float(row.metrics.interactions),
+                        "video_views": 0.0,
+                        "interactions": float(row.metrics.clicks),
                     })
         except GoogleAdsException as exc:
             print(f"[google] erro na conta {cid}: {exc}")

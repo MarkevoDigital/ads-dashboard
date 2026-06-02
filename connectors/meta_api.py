@@ -47,10 +47,26 @@ ACTION_KEYS = {
         "messaging_conversation_started_7d",
     ],
     "profile_visits": [
-        "onsite_conversion.ig_profile_visit",
-        "ig_profile_visit",
-        "profile_visit",
+        "onsite_conversion.ig_profile_visit", "ig_profile_visit", "profile_visit",
     ],
+    "site_visits": ["landing_page_view", "omni_landing_page_view"],
+    "video_views": ["video_view"],
+    "engagement": ["post_engagement"],
+}
+
+# Centroides aproximados dos estados (Meta faz breakdown por "region" = estado).
+BR_STATE_COORDS = {
+    "Acre": (-9.02, -70.81), "Alagoas": (-9.57, -36.78), "Amapa": (1.41, -51.77),
+    "Amazonas": (-3.42, -65.86), "Bahia": (-12.58, -41.70), "Ceara": (-5.20, -39.53),
+    "Distrito Federal": (-15.78, -47.93), "Espirito Santo": (-19.19, -40.31),
+    "Goias": (-15.93, -49.84), "Maranhao": (-5.42, -45.44), "Mato Grosso": (-12.64, -55.42),
+    "Mato Grosso do Sul": (-20.51, -54.54), "Minas Gerais": (-18.10, -44.38),
+    "Para": (-3.79, -52.48), "Paraiba": (-7.28, -36.72), "Parana": (-24.89, -51.55),
+    "Pernambuco": (-8.38, -37.86), "Piaui": (-6.60, -42.28),
+    "Rio de Janeiro": (-22.25, -42.66), "Rio Grande do Norte": (-5.81, -36.59),
+    "Rio Grande do Sul": (-30.17, -53.50), "Rondonia": (-10.83, -63.34),
+    "Roraima": (1.99, -61.33), "Santa Catarina": (-27.45, -50.95),
+    "Sao Paulo": (-22.19, -48.79), "Sergipe": (-10.57, -37.45), "Tocantins": (-9.46, -48.26),
 }
 
 
@@ -148,6 +164,9 @@ def fetch(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
             purchases = _first_action(actions, ACTION_KEYS["purchases"])
             leads = _first_action(actions, ACTION_KEYS["leads"])
             revenue = _first_action(action_values, ACTION_KEYS["purchases"])
+            site_visits = _first_action(actions, ACTION_KEYS["site_visits"])
+            video_views = _first_action(actions, ACTION_KEYS["video_views"])
+            engagement = _first_action(actions, ACTION_KEYS["engagement"])
             objective = _resolve_objective(r.get("objective", ""), msg, visits, obj_map)
             ad_id = r.get("ad_id", "")
             rows.append({
@@ -171,6 +190,44 @@ def fetch(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
                 "leads": leads,
                 "purchases": purchases,
                 "purchase_value": revenue,
+                "site_visits": site_visits,
+                "video_views": video_views,
+                "engagement": engagement,
             })
 
+    return pd.DataFrame(rows)
+
+
+def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
+    """Cliques por estado (breakdown=region) com coordenadas, p/ o mapa de calor."""
+    token = meta_cfg.get("access_token")
+    if not token:
+        return pd.DataFrame()
+    version = meta_cfg.get("api_version", "v21.0")
+    until = datetime.today().date()
+    since = until - timedelta(days=days - 1)
+    rows = []
+    for account_id in meta_cfg.get("ad_account_ids", []):
+        if not account_id:
+            continue
+        account_id = account_id if account_id.startswith("act_") else f"act_{account_id}"
+        url = f"{GRAPH}/{version}/{account_id}/insights"
+        params = {
+            "level": "account", "breakdowns": "region", "time_increment": 1,
+            "time_range": f'{{"since":"{since}","until":"{until}"}}',
+            "fields": "clicks", "limit": 500, "access_token": token,
+        }
+        try:
+            for r in _paged_get(url, params):
+                region = r.get("region", "")
+                coords = BR_STATE_COORDS.get(region)
+                if not coords:
+                    continue
+                rows.append({
+                    "date": r.get("date_start"), "account_id": account_id.replace("act_", ""),
+                    "platform": "meta", "city": region,
+                    "lat": coords[0], "lng": coords[1], "clicks": float(r.get("clicks", 0) or 0),
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[meta-geo] {account_id}: {exc}")
     return pd.DataFrame(rows)

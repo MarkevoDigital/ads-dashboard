@@ -1,16 +1,14 @@
 """
-Gerador de comentarios automaticos (PT-BR) baseado em regras.
+Gerador de comentario automatico (PT-BR), consolidado em UM card e com foco
+em pontos positivos: crescimento de resultados, reducao de custo, alta de CTR,
+melhor anuncio/palavra-chave, etc.
 
-Le o payload de analytics.build_payload e produz frases curtas e acionaveis:
-resumo de investimento, variacao do KPI principal por objetivo, melhor anuncio,
-melhor palavra-chave, comparativo de plataforma e alertas (fadiga, CTR baixo etc).
+Retorna um dict:
+  {"resumo": "<frase de abertura>", "destaques": ["<bullet positivo>", ...]}
 """
 from __future__ import annotations
 
 
-# ----------------------------------------------------------------------------
-# Formatadores (espelham o front, mas em texto pt-BR)
-# ----------------------------------------------------------------------------
 def fmt(value, kind: str) -> str:
     if value is None:
         return "—"
@@ -27,124 +25,84 @@ def fmt(value, kind: str) -> str:
     return str(value)
 
 
-def _delta_txt(delta) -> str:
-    if delta is None:
-        return "sem base de comparacao"
-    if delta > 0:
-        return f"alta de {delta:.1f}%".replace(".", ",")
-    if delta < 0:
-        return f"queda de {abs(delta):.1f}%".replace(".", ",")
-    return "estavel"
+def _pct(d) -> str:
+    return f"{abs(d):.1f}".replace(".", ",") + "%"
 
 
-def _sentido(good) -> str:
-    if good is True:
-        return "positivo"
-    if good is False:
-        return "ponto de atencao"
-    return "neutro"
+# verbos positivos por metrica (quando a variacao e favoravel)
+_UP_VERB = {"up": "cresceu", "down": "caiu"}
 
 
-# ----------------------------------------------------------------------------
-# Geracao
-# ----------------------------------------------------------------------------
-def generate(payload: dict) -> list[dict]:
+def generate(payload: dict) -> dict:
     if payload.get("vazio"):
-        return [{"tipo": "info", "texto": "Sem dados no periodo selecionado para esta conta."}]
+        return {"resumo": "Sem dados no período selecionado para esta conta.", "destaques": []}
 
-    comments: list[dict] = []
-    per = payload["comparativo_periodo"]
+    per = payload.get("comparativo_periodo", [])
     by_key = {p["key"]: p for p in per}
+    destaques: list[str] = []
 
-    # 1) Investimento total
+    # Abertura: investimento do periodo
     spend = by_key.get("spend")
+    p = payload.get("periodo", {})
     if spend:
-        comments.append({
-            "tipo": "info",
-            "texto": (
-                f"Investimento de {fmt(spend['current'], 'currency')} no periodo "
-                f"({payload['periodo']['inicio']} a {payload['periodo']['fim']}), "
-                f"{_delta_txt(spend['delta_pct'])} frente ao periodo anterior."
-            ),
-        })
+        resumo = (f"Investimento de {fmt(spend['current'], 'currency')} no período "
+                  f"({p.get('inicio')} a {p.get('fim')}).")
+    else:
+        resumo = f"Resumo do período {p.get('inicio')} a {p.get('fim')}."
 
-    # 2) KPI principal de cada objetivo
-    for b in payload["blocos_objetivo"]:
-        primary = next((c for c in b["cards"] if c.get("is_primary")), None)
-        if not primary:
+    # 1) Variacoes FAVORAVEIS (foco positivo)
+    nomes_amig = {
+        "conversions": "as conversões", "revenue": "a receita", "ctr": "o CTR",
+        "clicks": "os cliques", "impressions": "as impressões", "cpc": "o CPC",
+        "cpa": "o custo por conversão (CPA)", "spend": "o investimento",
+    }
+    for key, label in nomes_amig.items():
+        m = by_key.get(key)
+        if not m or m.get("delta_pct") is None or not m.get("good"):
             continue
-        tipo = {True: "positivo", False: "alerta", None: "info"}[primary["good"]]
-        comments.append({
-            "tipo": tipo,
-            "texto": (
-                f"[{b['label']}] {primary['label']} em {fmt(primary['value'], primary['fmt'])} "
-                f"({_delta_txt(primary['delta_pct'])}), {_sentido(primary['good'])}. "
-                f"Investimento do objetivo: {fmt(b['spend'], 'currency')}."
-            ),
-        })
+        d = m["delta_pct"]
+        if abs(d) < 1:
+            continue
+        if m["fmt"] in ("currency",) and key in ("cpc", "cpa"):
+            destaques.append(f"💸 {label.capitalize()} reduziu {_pct(d)}, agora em {fmt(m['current'], m['fmt'])}.")
+        else:
+            verbo = "cresceu" if d > 0 else "caiu"
+            destaques.append(f"📈 {label.capitalize()} {verbo} {_pct(d)}, chegando a {fmt(m['current'], m['fmt'])}.")
+
+    # 2) Funil: conversoes geradas
+    fun = payload.get("funil") or {}
+    stages = {s["label"]: s for s in fun.get("stages", [])}
+    if len(fun.get("stages", [])) >= 3:
+        conv = fun["stages"][-1]
+        taxa = next((r for r in fun.get("rates", []) if r["label"].startswith("Taxa")), None)
+        txt = f"🎯 {fmt(conv['value'], 'int')} {conv['label'].lower()} no período"
+        if taxa:
+            txt += f" (taxa de conversão de {fmt(taxa['value'], 'pct')})"
+        destaques.append(txt + ".")
 
     # 3) Melhor anuncio
     ads = payload.get("melhores_anuncios") or []
     if ads:
         a = ads[0]
-        comments.append({
-            "tipo": "positivo",
-            "texto": (
-                f"Melhor anuncio: \"{a['ad_name']}\" ({a['account']}) com "
-                f"{a['metric_label']} de {fmt(a['metric_value'], a['metric_fmt'])} "
-                f"e investimento de {fmt(a['spend'], 'currency')}. "
-                f"Considere escalar o orcamento deste criativo."
-            ),
-        })
+        destaques.append(
+            f"🏆 Melhor anúncio: \"{a['ad_name']}\" — {a['metric_label']} de "
+            f"{fmt(a['metric_value'], a['metric_fmt'])}. Bom candidato a escalar.")
 
-    # 4) Melhor palavra-chave
+    # 4) Melhor palavra-chave (se houver conversoes)
     kws = payload.get("palavras_chave") or []
-    if kws:
+    if kws and kws[0].get("conversions", 0) > 0:
         k = kws[0]
-        if k["conversions"] > 0:
-            extra = f"gerando {k['conversions']} conversoes a um CPA de {fmt(k['cpa'], 'currency')}"
-        else:
-            extra = f"com {k['clicks']} cliques e CTR de {fmt(k['ctr'], 'pct')}"
-        comments.append({
-            "tipo": "info",
-            "texto": f"Palavra-chave destaque no Google Ads: \"{k['keyword']}\", {extra}.",
-        })
+        destaques.append(
+            f"🔑 Palavra-chave destaque: \"{k['keyword']}\" gerou {k['conversions']} "
+            f"conversões a CPA de {fmt(k['cpa'], 'currency')}.")
 
-    # 5) Comparativo de plataforma
-    cp = payload.get("comparativo_plataforma") or {}
-    m, g = cp.get("meta", {}), cp.get("google", {})
-    if m.get("spend") or g.get("spend"):
-        total = (m.get("spend", 0) + g.get("spend", 0)) or 1
-        share_meta = m.get("spend", 0) / total * 100
-        comments.append({
-            "tipo": "info",
-            "texto": (
-                f"Divisao de verba: Meta Ads {share_meta:.0f}% "
-                f"({fmt(m.get('spend', 0), 'currency')}) x Google Ads "
-                f"{100 - share_meta:.0f}% ({fmt(g.get('spend', 0), 'currency')})."
-            ),
-        })
+    # 5) Top cidade (geo)
+    cidades = (payload.get("geo") or {}).get("cidades") or []
+    if cidades:
+        c = cidades[0]
+        destaques.append(f"📍 {c['city']} liderou em cliques ({fmt(c['clicks'], 'int')}).")
 
-    # 6) Alertas baseados em limiares
-    for b in payload["blocos_objetivo"]:
-        cards = {c["key"]: c for c in b["cards"]}
-        freq = cards.get("frequency")
-        if freq and freq["value"] >= 3.0:
-            comments.append({
-                "tipo": "alerta",
-                "texto": (
-                    f"[{b['label']}] Frequencia de {fmt(freq['value'], 'dec')} indica possivel "
-                    f"fadiga de criativo. Atualize os anuncios ou amplie o publico."
-                ),
-            })
-        ctr = cards.get("ctr")
-        if ctr and 0 < ctr["value"] < 0.008:
-            comments.append({
-                "tipo": "alerta",
-                "texto": (
-                    f"[{b['label']}] CTR de {fmt(ctr['value'], 'pct')} esta abaixo do esperado. "
-                    f"Reveja criativo e segmentacao."
-                ),
-            })
+    if not destaques:
+        destaques.append("✅ Campanhas em veiculação estável no período. Acompanhe os próximos dias para identificar tendências.")
 
-    return comments
+    return {"resumo": resumo, "destaques": destaques}

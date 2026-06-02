@@ -6,6 +6,9 @@
   <title>Dashboard de Ads — Meta + Google</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -13,7 +16,7 @@
       <span class="logo">📊</span>
       <div>
         <h1>Dashboard de Ads</h1>
-        <p class="sub">Meta Ads + Google Ads · KPIs adaptativos por objetivo</p>
+        <p class="sub" id="cliente-sub">Meta Ads + Google Ads</p>
       </div>
     </div>
     <div class="filters">
@@ -32,6 +35,7 @@
           <option value="7">Ultimos 7 dias</option>
           <option value="14">Ultimos 14 dias</option>
           <option value="30" selected>Ultimos 30 dias</option>
+          <option value="60">Ultimos 60 dias</option>
         </select>
       </label>
       <button id="f-refresh" title="Recarregar dados da fonte">⟳ Atualizar</button>
@@ -44,11 +48,17 @@
   </div>
 
   <main id="app">
-    <!-- Comentarios automaticos -->
-    <section class="card">
-      <h2>🧠 Comentarios automaticos</h2>
-      <div id="comments" class="comments"></div>
-    </section>
+    <!-- Funil + Comentario -->
+    <div class="two-col funnel-row">
+      <section class="card">
+        <h2>🔻 Funil de resultados</h2>
+        <div id="funnel" class="funnel"></div>
+      </section>
+      <section class="card comment-card">
+        <h2>🧠 Resumo automático</h2>
+        <div id="comments"></div>
+      </section>
+    </div>
 
     <!-- Serie temporal -->
     <section class="card">
@@ -56,7 +66,7 @@
       <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
     </section>
 
-    <!-- Blocos por objetivo -->
+    <!-- Blocos por objetivo (cards; metricas zeradas sao ocultadas) -->
     <section id="objective-blocks"></section>
 
     <!-- Melhores anuncios -->
@@ -66,14 +76,18 @@
       <div id="best-ads" class="ads-grid"></div>
     </section>
 
+    <!-- Campanhas por plataforma -->
+    <section class="card">
+      <h2>🗂️ Campanhas por plataforma</h2>
+      <p class="hint">Campanhas com veiculacao no periodo filtrado.</p>
+      <div id="campaigns-wrap" class="table-wrap"></div>
+    </section>
+
     <div class="two-col">
-      <!-- Palavras-chave -->
       <section class="card">
         <h2>🔑 Palavras-chave (Google Ads)</h2>
         <div id="keywords-wrap" class="table-wrap"></div>
       </section>
-
-      <!-- Comparativo plataforma -->
       <section class="card">
         <h2>⚖️ Meta x Google</h2>
         <div class="chart-wrap small"><canvas id="platform-chart"></canvas></div>
@@ -86,10 +100,17 @@
       <h2>🔁 Periodo atual vs. anterior</h2>
       <div id="period-wrap" class="table-wrap"></div>
     </section>
+
+    <!-- Mapa de calor geografico -->
+    <section class="card" id="geo-section">
+      <h2>📍 Mapa de calor — cliques por localizacao</h2>
+      <div id="geo-map" class="geo-map"></div>
+      <div id="geo-top" class="geo-top"></div>
+    </section>
   </main>
 
   <div id="loading" class="loading hidden">Carregando…</div>
-  <footer class="foot">Atualizacao automatica diaria · dados via Google Sheets</footer>
+  <footer class="foot">Atualizacao automatica diaria · Meta Ads + Google Ads</footer>
 
   <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>

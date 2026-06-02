@@ -1,93 +1,110 @@
 """
 Motor de metricas adaptativas.
 
-A ideia central: o conjunto de KPIs em destaque MUDA conforme o objetivo da
-campanha. Cada objetivo aponta para uma lista ordenada de KPIs do catalogo.
-Tudo e calculado a partir de somas agregadas (forma correta de agregar razoes).
+- O conjunto de KPIs em destaque MUDA conforme o objetivo da campanha.
+- Tudo e calculado a partir de somas agregadas (forma correta de agregar razoes).
+- Regra de ocultacao: um KPI so aparece se sua metrica-base tiver historico (>0)
+  nas contas do cliente. O mapa BASE_KEY define essa dependencia.
 """
 from __future__ import annotations
 
 import pandas as pd
 
-# ----------------------------------------------------------------------------
-# Catalogo de KPIs
-#   dir: "up"  -> maior e melhor | "down" -> menor e melhor | "neutral"
-#   fmt: como formatar no front (currency, int, pct, ratio, dec)
-#   calc: recebe dict de somas e devolve o valor
-# ----------------------------------------------------------------------------
+
 def _safe(n, d):
     return (n / d) if d else 0.0
 
 
+# ----------------------------------------------------------------------------
+# Catalogo de KPIs
+#   dir: "up" (maior=melhor) | "down" (menor=melhor) | "neutral"
+#   fmt: currency | int | pct | ratio | dec
+#   base: chave de soma que precisa ter historico (>0) p/ o card aparecer
+# ----------------------------------------------------------------------------
 KPI_CATALOG = {
-    "spend":        {"label": "Investimento",        "fmt": "currency", "dir": "neutral", "calc": lambda s: s["spend"]},
-    "impressions":  {"label": "Impressoes",          "fmt": "int",      "dir": "up",      "calc": lambda s: s["impressions"]},
-    "reach":        {"label": "Alcance",             "fmt": "int",      "dir": "up",      "calc": lambda s: s["reach"]},
-    "frequency":    {"label": "Frequencia",          "fmt": "dec",      "dir": "down",    "calc": lambda s: _safe(s["impressions"], s["reach"])},
-    "clicks":       {"label": "Cliques",             "fmt": "int",      "dir": "up",      "calc": lambda s: s["clicks"]},
-    "link_clicks":  {"label": "Cliques no link",     "fmt": "int",      "dir": "up",      "calc": lambda s: s["link_clicks"]},
-    "ctr":          {"label": "CTR",                 "fmt": "pct",      "dir": "up",      "calc": lambda s: _safe(s["clicks"], s["impressions"])},
-    "cpc":          {"label": "CPC",                 "fmt": "currency", "dir": "down",    "calc": lambda s: _safe(s["spend"], s["clicks"])},
-    "cpm":          {"label": "CPM",                 "fmt": "currency", "dir": "down",    "calc": lambda s: _safe(s["spend"], s["impressions"]) * 1000},
-    "conversions":  {"label": "Conversoes",          "fmt": "int",      "dir": "up",      "calc": lambda s: s["conversions"]},
-    "revenue":      {"label": "Receita",             "fmt": "currency", "dir": "up",      "calc": lambda s: s["revenue"]},
-    "roas":         {"label": "ROAS",                "fmt": "ratio",    "dir": "up",      "calc": lambda s: _safe(s["revenue"], s["spend"])},
-    "cpa":          {"label": "CPA",                 "fmt": "currency", "dir": "down",    "calc": lambda s: _safe(s["spend"], s["conversions"])},
-    "conv_rate":    {"label": "Taxa de conversao",   "fmt": "pct",      "dir": "up",      "calc": lambda s: _safe(s["conversions"], s["clicks"])},
-    "leads":        {"label": "Leads",               "fmt": "int",      "dir": "up",      "calc": lambda s: s["leads"]},
-    "cpl":          {"label": "Custo por lead",      "fmt": "currency", "dir": "down",    "calc": lambda s: _safe(s["spend"], s["leads"])},
-    "lead_rate":    {"label": "Taxa de lead",        "fmt": "pct",      "dir": "up",      "calc": lambda s: _safe(s["leads"], s["link_clicks"])},
-    "messaging":    {"label": "Conversas iniciadas", "fmt": "int",      "dir": "up",      "calc": lambda s: s["messaging"]},
-    "cost_per_msg": {"label": "Custo por conversa",  "fmt": "currency", "dir": "down",    "calc": lambda s: _safe(s["spend"], s["messaging"])},
-    "profile_visits":{"label": "Visitas ao perfil",  "fmt": "int",      "dir": "up",      "calc": lambda s: s["profile_visits"]},
-    "cost_per_visit":{"label": "Custo por visita",   "fmt": "currency", "dir": "down",    "calc": lambda s: _safe(s["spend"], s["profile_visits"])},
+    "spend":          {"label": "Investimento",          "fmt": "currency", "dir": "neutral", "base": "spend",        "calc": lambda s: s["spend"]},
+    "impressions":    {"label": "Impressões",            "fmt": "int",      "dir": "up",      "base": "impressions",  "calc": lambda s: s["impressions"]},
+    "reach":          {"label": "Alcance",               "fmt": "int",      "dir": "up",      "base": "reach",        "calc": lambda s: s["reach"]},
+    "frequency":      {"label": "Frequência",            "fmt": "dec",      "dir": "down",    "base": "reach",        "calc": lambda s: _safe(s["impressions"], s["reach"])},
+    "clicks":         {"label": "Cliques",               "fmt": "int",      "dir": "up",      "base": "clicks",       "calc": lambda s: s["clicks"]},
+    "link_clicks":    {"label": "Cliques no link",       "fmt": "int",      "dir": "up",      "base": "link_clicks",  "calc": lambda s: s["link_clicks"]},
+    "ctr":            {"label": "CTR",                   "fmt": "pct",      "dir": "up",      "base": "impressions",  "calc": lambda s: _safe(s["clicks"], s["impressions"])},
+    "cpc":            {"label": "CPC",                   "fmt": "currency", "dir": "down",    "base": "clicks",       "calc": lambda s: _safe(s["spend"], s["clicks"])},
+    "cpm":            {"label": "CPM",                   "fmt": "currency", "dir": "down",    "base": "impressions",  "calc": lambda s: _safe(s["spend"], s["impressions"]) * 1000},
+    "conversions":    {"label": "Conversões",            "fmt": "int",      "dir": "up",      "base": "conversions",  "calc": lambda s: s["conversions"]},
+    "revenue":        {"label": "Receita",               "fmt": "currency", "dir": "up",      "base": "revenue",      "calc": lambda s: s["revenue"]},
+    "roas":           {"label": "ROAS",                  "fmt": "ratio",    "dir": "up",      "base": "revenue",      "calc": lambda s: _safe(s["revenue"], s["spend"])},
+    "cpa":            {"label": "CPA",                   "fmt": "currency", "dir": "down",    "base": "conversions",  "calc": lambda s: _safe(s["spend"], s["conversions"])},
+    "conv_rate":      {"label": "Taxa de conversão",     "fmt": "pct",      "dir": "up",      "base": "conversions",  "calc": lambda s: _safe(s["conversions"], s["clicks"])},
+    "leads":          {"label": "Leads",                 "fmt": "int",      "dir": "up",      "base": "leads",        "calc": lambda s: s["leads"]},
+    "cpl":            {"label": "Custo por lead",        "fmt": "currency", "dir": "down",    "base": "leads",        "calc": lambda s: _safe(s["spend"], s["leads"])},
+    "lead_rate":      {"label": "Taxa de lead",          "fmt": "pct",      "dir": "up",      "base": "leads",        "calc": lambda s: _safe(s["leads"], s["link_clicks"])},
+    "messaging":      {"label": "Conversas iniciadas",   "fmt": "int",      "dir": "up",      "base": "messaging",    "calc": lambda s: s["messaging"]},
+    "cost_per_msg":   {"label": "Custo por conversa",    "fmt": "currency", "dir": "down",    "base": "messaging",    "calc": lambda s: _safe(s["spend"], s["messaging"])},
+    "profile_visits": {"label": "Visitas ao perfil",     "fmt": "int",      "dir": "up",      "base": "profile_visits","calc": lambda s: s["profile_visits"]},
+    "cost_per_visit": {"label": "Custo/visita perfil",   "fmt": "currency", "dir": "down",    "base": "profile_visits","calc": lambda s: _safe(s["spend"], s["profile_visits"])},
+    "site_visits":    {"label": "Visitas ao site",       "fmt": "int",      "dir": "up",      "base": "site_visits",  "calc": lambda s: s["site_visits"]},
+    "cost_per_site":  {"label": "Custo/visita site",     "fmt": "currency", "dir": "down",    "base": "site_visits",  "calc": lambda s: _safe(s["spend"], s["site_visits"])},
+    "video_views":    {"label": "Visualizações de vídeo","fmt": "int",      "dir": "up",      "base": "video_views",  "calc": lambda s: s["video_views"]},
+    "cpv":            {"label": "Custo por view",        "fmt": "currency", "dir": "down",    "base": "video_views",  "calc": lambda s: _safe(s["spend"], s["video_views"])},
+    "view_rate":      {"label": "Taxa de visualização",  "fmt": "pct",      "dir": "up",      "base": "video_views",  "calc": lambda s: _safe(s["video_views"], s["impressions"])},
+    "engagement":     {"label": "Engajamentos",          "fmt": "int",      "dir": "up",      "base": "engagement",   "calc": lambda s: s["engagement"]},
+    "eng_rate":       {"label": "Taxa de engajamento",   "fmt": "pct",      "dir": "up",      "base": "engagement",   "calc": lambda s: _safe(s["engagement"], s["impressions"])},
+    "interactions":   {"label": "Interações",            "fmt": "int",      "dir": "up",      "base": "interactions", "calc": lambda s: s["interactions"]},
 }
 
 # ----------------------------------------------------------------------------
-# Configuracao por objetivo: KPIs em destaque + KPI principal (heroi)
+# Configuracao por objetivo: KPIs candidatos (ocultos se zerados) + heroi
+# A ordem importa: os primeiros aparecem primeiro.
 # ----------------------------------------------------------------------------
 OBJECTIVE_CONFIG = {
     "vendas": {
-        "label": "Vendas / Conversoes", "icone": "shopping-cart",
-        "kpis": ["spend", "revenue", "roas", "conversions", "cpa", "conv_rate"],
-        "primary": "roas",
-        "best_ad_metric": "roas",
+        "label": "Vendas / Conversões", "icone": "shopping-cart", "conv_label": "Conversões",
+        "kpis": ["spend", "revenue", "roas", "conversions", "cpa", "conv_rate",
+                 "clicks", "ctr", "cpc", "impressions", "cpm", "site_visits"],
+        "primary": "roas", "best_ad_metric": "roas", "conv_key": "conversions",
     },
     "leads": {
-        "label": "Geracao de leads", "icone": "user-plus",
-        "kpis": ["spend", "leads", "cpl", "lead_rate", "ctr", "cpc"],
-        "primary": "cpl",
-        "best_ad_metric": "cpl",
+        "label": "Geração de leads", "icone": "user-plus", "conv_label": "Leads",
+        "kpis": ["spend", "leads", "cpl", "lead_rate", "clicks", "ctr", "cpc",
+                 "impressions", "cpm", "site_visits"],
+        "primary": "cpl", "best_ad_metric": "cpl", "conv_key": "leads",
     },
     "mensagens": {
-        "label": "Conversas por mensagem", "icone": "message-circle",
-        "kpis": ["spend", "messaging", "cost_per_msg", "ctr", "cpc", "impressions"],
-        "primary": "cost_per_msg",
-        "best_ad_metric": "cost_per_msg",
+        "label": "Conversas por mensagem", "icone": "message-circle", "conv_label": "Conversas",
+        "kpis": ["spend", "messaging", "cost_per_msg", "clicks", "ctr", "cpc",
+                 "impressions", "cpm", "reach"],
+        "primary": "cost_per_msg", "best_ad_metric": "cost_per_msg", "conv_key": "messaging",
     },
     "visitas_instagram": {
-        "label": "Visitas ao Instagram", "icone": "instagram",
-        "kpis": ["spend", "profile_visits", "cost_per_visit", "ctr", "cpc", "reach"],
-        "primary": "cost_per_visit",
-        "best_ad_metric": "cost_per_visit",
+        "label": "Visitas ao Instagram", "icone": "instagram", "conv_label": "Visitas ao perfil",
+        "kpis": ["spend", "profile_visits", "cost_per_visit", "engagement", "eng_rate",
+                 "clicks", "ctr", "cpc", "reach", "impressions", "cpm"],
+        "primary": "cost_per_visit", "best_ad_metric": "cost_per_visit", "conv_key": "profile_visits",
     },
     "trafego": {
-        "label": "Trafego / Cliques", "icone": "mouse-pointer",
-        "kpis": ["spend", "link_clicks", "cpc", "ctr", "impressions", "cpm"],
-        "primary": "cpc",
-        "best_ad_metric": "cpc",
+        "label": "Tráfego / Cliques", "icone": "mouse-pointer", "conv_label": "Cliques no link",
+        "kpis": ["spend", "link_clicks", "site_visits", "cost_per_site", "cpc", "ctr",
+                 "clicks", "impressions", "cpm"],
+        "primary": "cpc", "best_ad_metric": "cpc", "conv_key": "link_clicks",
+    },
+    "video": {
+        "label": "Visualizações de vídeo", "icone": "play-circle", "conv_label": "Views",
+        "kpis": ["spend", "video_views", "cpv", "view_rate", "engagement",
+                 "clicks", "ctr", "impressions", "cpm", "reach"],
+        "primary": "cpv", "best_ad_metric": "cpv", "conv_key": "video_views",
     },
     "alcance": {
-        "label": "Alcance / Reconhecimento", "icone": "radio",
-        "kpis": ["spend", "reach", "cpm", "frequency", "impressions", "clicks"],
-        "primary": "cpm",
-        "best_ad_metric": "cpm",
+        "label": "Alcance / Reconhecimento", "icone": "radio", "conv_label": "Alcance",
+        "kpis": ["spend", "reach", "cpm", "frequency", "impressions", "clicks",
+                 "ctr", "engagement"],
+        "primary": "cpm", "best_ad_metric": "cpm", "conv_key": "reach",
     },
     "outros": {
-        "label": "Outros", "icone": "bar-chart",
-        "kpis": ["spend", "impressions", "clicks", "ctr", "cpc", "cpm"],
-        "primary": "ctr",
-        "best_ad_metric": "ctr",
+        "label": "Outros", "icone": "bar-chart", "conv_label": "Conversões",
+        "kpis": ["spend", "impressions", "clicks", "ctr", "cpc", "cpm",
+                 "conversions", "conv_rate"],
+        "primary": "ctr", "best_ad_metric": "ctr", "conv_key": "conversions",
     },
 }
 
@@ -97,15 +114,23 @@ def objective_config(obj: str) -> dict:
 
 
 # ----------------------------------------------------------------------------
-# Agregacao de somas (unifica Meta + Google num mesmo dicionario)
+# Agregacao de somas (unifica Meta + Google)
 # ----------------------------------------------------------------------------
+_META_NUM = ["impressions", "reach", "clicks", "link_clicks", "spend",
+             "messaging_conversations", "profile_visits", "leads",
+             "purchases", "purchase_value", "site_visits", "video_views",
+             "engagement"]
+_GOOGLE_NUM = ["impressions", "clicks", "cost", "conversions", "conversion_value",
+               "video_views", "interactions"]
+
+
+def _col(df, c):
+    return float(df[c].sum()) if (len(df) and c in df.columns) else 0.0
+
+
 def _sums(meta: pd.DataFrame, google: pd.DataFrame) -> dict:
-    m = {c: float(meta[c].sum()) if len(meta) else 0.0 for c in
-         ["impressions", "reach", "clicks", "link_clicks", "spend",
-          "messaging_conversations", "profile_visits", "leads",
-          "purchases", "purchase_value"]}
-    g = {c: float(google[c].sum()) if len(google) else 0.0 for c in
-         ["impressions", "clicks", "cost", "conversions", "conversion_value"]}
+    m = {c: _col(meta, c) for c in _META_NUM}
+    g = {c: _col(google, c) for c in _GOOGLE_NUM}
     return {
         "impressions": m["impressions"] + g["impressions"],
         "reach": m["reach"],
@@ -115,13 +140,20 @@ def _sums(meta: pd.DataFrame, google: pd.DataFrame) -> dict:
         "messaging": m["messaging_conversations"],
         "profile_visits": m["profile_visits"],
         "leads": m["leads"],
-        # conversoes/receita combinam compras (Meta) + conversoes (Google)
+        "site_visits": m["site_visits"],
+        "video_views": m["video_views"] + g["video_views"],
+        "engagement": m["engagement"],
+        "interactions": g["interactions"],
         "conversions": m["purchases"] + g["conversions"],
         "revenue": m["purchase_value"] + g["conversion_value"],
     }
 
 
-def compute_kpis(meta: pd.DataFrame, google: pd.DataFrame, kpi_keys: list[str]) -> dict:
+def sums(meta, google) -> dict:
+    return _sums(meta, google)
+
+
+def compute_kpis(meta, google, kpi_keys) -> dict:
     s = _sums(meta, google)
     out = {}
     for key in kpi_keys:
@@ -133,20 +165,30 @@ def compute_kpis(meta: pd.DataFrame, google: pd.DataFrame, kpi_keys: list[str]) 
     return out
 
 
-def kpi_value(meta: pd.DataFrame, google: pd.DataFrame, key: str) -> float:
+def kpi_value(meta, google, key: str) -> float:
     return KPI_CATALOG[key]["calc"](_sums(meta, google))
 
 
+def active_keys(history_sums: dict, candidate_keys: list[str]) -> list[str]:
+    """Filtra KPIs cuja metrica-base tem historico (>0). Mantem a ordem."""
+    out = []
+    for k in candidate_keys:
+        base = KPI_CATALOG[k]["base"]
+        if history_sums.get(base, 0) > 0:
+            out.append(k)
+    return out
+
+
 # ----------------------------------------------------------------------------
-# Variacao percentual periodo vs periodo
+# Variacao percentual
 # ----------------------------------------------------------------------------
-def pct_change(curr: float, prev: float) -> float | None:
+def pct_change(curr: float, prev: float):
     if prev == 0:
         return None
     return round((curr - prev) / abs(prev) * 100, 1)
 
 
-def is_good(direction: str, delta: float | None) -> bool | None:
+def is_good(direction: str, delta):
     if delta is None or direction == "neutral":
         return None
     return delta >= 0 if direction == "up" else delta <= 0

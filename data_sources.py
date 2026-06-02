@@ -31,21 +31,27 @@ META_COLUMNS = [
     "ad_thumbnail_url", "ad_permalink", "impressions", "reach", "frequency",
     "clicks", "link_clicks", "spend", "messaging_conversations",
     "profile_visits", "leads", "purchases", "purchase_value",
+    "site_visits", "video_views", "engagement",
 ]
 GOOGLE_COLUMNS = [
     "date", "account", "account_id", "objective", "campaign", "campaign_type",
     "ad_group", "keyword", "match_type", "impressions", "clicks", "cost",
-    "conversions", "conversion_value",
+    "conversions", "conversion_value", "video_views", "interactions",
+]
+GEO_COLUMNS = [
+    "date", "account_id", "platform", "city", "lat", "lng", "clicks",
 ]
 
 NUMERIC_META = [
     "impressions", "reach", "frequency", "clicks", "link_clicks", "spend",
     "messaging_conversations", "profile_visits", "leads", "purchases",
-    "purchase_value",
+    "purchase_value", "site_visits", "video_views", "engagement",
 ]
 NUMERIC_GOOGLE = [
     "impressions", "clicks", "cost", "conversions", "conversion_value",
+    "video_views", "interactions",
 ]
+NUMERIC_GEO = ["lat", "lng", "clicks"]
 
 
 # ----------------------------------------------------------------------------
@@ -208,6 +214,9 @@ def _synthesize(days: int = 75):
         ("Loja Moda Bella", "trafego", "Trafego | Blog Tendencias",
          ["Tendencias 2026 - Imagem", "Guia de Estilo - Video"],
          (40, 90)),
+        ("Loja Moda Bella", "video", "Video | Lancamento Colecao",
+         ["Reels Colecao - Video", "Making Of - Video"],
+         (35, 75)),
         ("Clinica Sorriso", "leads", "Leads | Implante Dentario",
          ["Avaliacao Gratis - Imagem", "Antes e Depois - Carrossel", "Depoimento - Video"],
          (90, 160)),
@@ -223,6 +232,9 @@ def _synthesize(days: int = 75):
         ("Loja Moda Bella", "vendas", "PMax | Loja Online", "Performance Max", "—",
          ["vestido floral", "roupa feminina online", "moda praia", "comprar vestido"],
          (150, 280)),
+        ("Loja Moda Bella", "video", "Video | YouTube Colecao", "Video", "—",
+         [""],
+         (30, 70)),
         ("Clinica Sorriso", "leads", "Search | Implante", "Search", "Implante Dentario",
          ["implante dentario preco", "clinica implante dentario", "dentista perto de mim",
           "implante dentario sao paulo"],
@@ -248,7 +260,7 @@ def _synthesize(days: int = 75):
                 clicks = max(0, int(impressions * ctr))
                 link_clicks = int(clicks * rng.uniform(0.6, 0.9))
                 row = dict(
-                    date=d.date(), account=acc, objective=obj, campaign=camp,
+                    date=d.date(), account=acc, account_id=acc, objective=obj, campaign=camp,
                     adset=f"{obj}-conjunto-{adi+1}", ad_name=ad,
                     ad_thumbnail_url=thumb, ad_permalink="https://facebook.com/ads/library",
                     impressions=impressions, reach=reach,
@@ -256,17 +268,26 @@ def _synthesize(days: int = 75):
                     clicks=clicks, link_clicks=link_clicks, spend=round(spend, 2),
                     messaging_conversations=0, profile_visits=0, leads=0,
                     purchases=0, purchase_value=0.0,
+                    site_visits=0, video_views=0, engagement=0,
                 )
                 if obj == "vendas":
                     cr = rng.uniform(0.02, 0.06)
                     row["purchases"] = int(link_clicks * cr)
                     row["purchase_value"] = round(row["purchases"] * rng.uniform(140, 260), 2)
+                    row["site_visits"] = int(link_clicks * rng.uniform(0.6, 0.85))
                 elif obj == "leads":
                     row["leads"] = int(link_clicks * rng.uniform(0.08, 0.18))
+                    row["site_visits"] = int(link_clicks * rng.uniform(0.6, 0.85))
                 elif obj == "mensagens":
                     row["messaging_conversations"] = int(link_clicks * rng.uniform(0.15, 0.35))
                 elif obj == "visitas_instagram":
                     row["profile_visits"] = int(clicks * rng.uniform(0.4, 0.8))
+                    row["engagement"] = int(clicks * rng.uniform(1.5, 3.0))
+                elif obj == "trafego":
+                    row["site_visits"] = int(link_clicks * rng.uniform(0.7, 0.9))
+                elif obj == "video":
+                    row["video_views"] = int(impressions * rng.uniform(0.18, 0.35))
+                    row["engagement"] = int(clicks * rng.uniform(1.2, 2.2))
                 meta_rows.append(row)
 
     google_rows = []
@@ -280,52 +301,99 @@ def _synthesize(days: int = 75):
                 clicks = max(0, int(cost / cpc))
                 ctr = rng.uniform(0.03, 0.12)
                 impressions = max(clicks, int(clicks / max(ctr, 0.01)))
+                video_views = 0
+                interactions = clicks
                 if obj == "vendas":
                     conv = int(clicks * rng.uniform(0.02, 0.07))
                     cval = round(conv * rng.uniform(150, 280), 2)
+                elif obj == "video":
+                    conv = 0
+                    cval = 0.0
+                    video_views = int(impressions * rng.uniform(0.2, 0.4))
+                    interactions = video_views
                 else:
                     conv = int(clicks * rng.uniform(0.05, 0.14))
                     cval = 0.0
                 google_rows.append(dict(
-                    date=d.date(), account=acc, objective=obj, campaign=camp,
+                    date=d.date(), account=acc, account_id=acc, objective=obj, campaign=camp,
                     campaign_type=ctype, ad_group=agroup, keyword=kw,
                     match_type=rng.choice(["Ampla", "Frase", "Exata"]),
                     impressions=impressions, clicks=clicks, cost=round(cost, 2),
                     conversions=conv, conversion_value=cval,
+                    video_views=video_views, interactions=interactions,
                 ))
 
-    return pd.DataFrame(meta_rows), pd.DataFrame(google_rows)
+    # ---- Geo (cliques por cidade, com coordenadas) ----
+    cities = [
+        ("Cuiaba", -15.601, -56.097), ("Varzea Grande", -15.646, -56.132),
+        ("Rondonopolis", -16.470, -54.635), ("Sinop", -11.864, -55.502),
+        ("Sao Paulo", -23.550, -46.633), ("Campinas", -22.905, -47.060),
+        ("Rio de Janeiro", -22.906, -43.172),
+    ]
+    geo_rows = []
+    accounts = sorted({r["account_id"] for r in meta_rows} | {r["account_id"] for r in google_rows})
+    for acc in accounts:
+        weights = rng.uniform(0.3, 1.0, size=len(cities))
+        weights = weights / weights.sum()
+        for i, d in enumerate(dates):
+            base = rng.uniform(20, 120) * season(i, days)
+            for (city, lat, lng), w in zip(cities, weights):
+                clk = int(base * w)
+                if clk <= 0:
+                    continue
+                for plat in ("meta", "google"):
+                    geo_rows.append(dict(
+                        date=d.date(), account_id=acc, platform=plat, city=city,
+                        lat=lat, lng=lng, clicks=int(clk * rng.uniform(0.4, 0.6)),
+                    ))
+
+    return (pd.DataFrame(meta_rows), pd.DataFrame(google_rows), pd.DataFrame(geo_rows))
 
 
 def _ensure_sample_files():
-    """Grava os CSVs de exemplo em sample_data/ para servir de modelo de planilha."""
+    """Grava os CSVs de exemplo em sample_data/ (modelo de planilha + geo)."""
     os.makedirs(SAMPLE_DIR, exist_ok=True)
     meta_path = os.path.join(SAMPLE_DIR, "meta_ads.csv")
     google_path = os.path.join(SAMPLE_DIR, "google_ads.csv")
-    if not (os.path.exists(meta_path) and os.path.exists(google_path)):
-        meta_df, google_df = _synthesize()
+    geo_path = os.path.join(SAMPLE_DIR, "geo.csv")
+    if not (os.path.exists(meta_path) and os.path.exists(google_path) and os.path.exists(geo_path)):
+        meta_df, google_df, geo_df = _synthesize()
         meta_df.to_csv(meta_path, index=False, encoding="utf-8")
         google_df.to_csv(google_path, index=False, encoding="utf-8")
-    return meta_path, google_path
+        geo_df.to_csv(geo_path, index=False, encoding="utf-8")
+    return meta_path, google_path, geo_path
 
 
 # ----------------------------------------------------------------------------
 # Cache
 # ----------------------------------------------------------------------------
+def _coerce_geo(df: pd.DataFrame) -> pd.DataFrame:
+    for col in GEO_COLUMNS:
+        if col not in df.columns:
+            df[col] = 0 if col in NUMERIC_GEO else ""
+    df = df[GEO_COLUMNS].copy()
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    for col in NUMERIC_GEO:
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+    return df.dropna(subset=["date"])
+
+
 class DataStore:
     def __init__(self, config: dict):
         self.config = config
         self.meta = pd.DataFrame(columns=META_COLUMNS)
         self.google = pd.DataFrame(columns=GOOGLE_COLUMNS)
+        self.geo = pd.DataFrame(columns=GEO_COLUMNS)
         self.updated_at: datetime | None = None
         self.source_label = "—"
         self._lock = threading.Lock()
 
     def refresh(self) -> dict:
         with self._lock:
-            meta_df, google_df, label = self._load_raw()
+            meta_df, google_df, geo_df, label = self._load_raw()
             self.meta = _coerce(meta_df, META_COLUMNS, NUMERIC_META)
             self.google = _coerce(google_df, GOOGLE_COLUMNS, NUMERIC_GOOGLE)
+            self.geo = _coerce_geo(geo_df)
             self.updated_at = datetime.now()
             self.source_label = label
         return {
@@ -339,10 +407,13 @@ class DataStore:
         mode = self.config.get("fonte_dados", "auto")
         gs = self.config.get("google_sheets", {})
 
+        empty_geo = pd.DataFrame(columns=GEO_COLUMNS)
+
         def via_service_account():
             return (
                 _read_service_account(self.config, gs.get("aba_meta", "meta_ads")),
                 _read_service_account(self.config, gs.get("aba_google", "google_ads")),
+                empty_geo,
                 "Google Sheets (conta de servico)",
             )
 
@@ -350,14 +421,16 @@ class DataStore:
             return (
                 _read_csv_url(gs["meta_csv_url"]),
                 _read_csv_url(gs["google_csv_url"]),
+                empty_geo,
                 "Google Sheets (CSV publicado)",
             )
 
         def via_sample():
-            meta_path, google_path = _ensure_sample_files()
+            meta_path, google_path, geo_path = _ensure_sample_files()
             return (
                 pd.read_csv(meta_path),
                 pd.read_csv(google_path),
+                pd.read_csv(geo_path),
                 "Dados de exemplo",
             )
 
@@ -369,7 +442,18 @@ class DataStore:
             google_df = google_api.fetch(api.get("google_ads", {}), dias)
             if meta_df.empty and google_df.empty:
                 raise RuntimeError("API sem dados (verifique tokens/contas).")
-            return meta_df, google_df, "API (Meta + Google Ads)"
+            geo_frames = []
+            try:
+                geo_frames.append(meta_api.fetch_geo(api.get("meta", {}), dias))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[geo] meta falhou: {exc}")
+            try:
+                geo_frames.append(google_api.fetch_geo(api.get("google_ads", {}), dias))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[geo] google falhou: {exc}")
+            geo_frames = [g for g in geo_frames if g is not None and len(g)]
+            geo_df = pd.concat(geo_frames, ignore_index=True) if geo_frames else empty_geo
+            return meta_df, google_df, geo_df, "API (Meta + Google Ads)"
 
         api_cfg = self.config.get("api", {})
         has_api = bool(api_cfg.get("meta", {}).get("access_token")

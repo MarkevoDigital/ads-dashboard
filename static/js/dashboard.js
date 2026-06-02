@@ -222,20 +222,22 @@
     const ctx = $("trend-chart");
     if (trendChart) trendChart.destroy();
     if (!s || !s.labels) return;
+    const datasets = [
+      { type: "bar", label: "Investimento (R$)", data: s.spend, backgroundColor: "rgba(91,140,255,.45)", yAxisID: "y", order: 3 },
+      { type: "line", label: "Cliques", data: s.clicks, borderColor: "#2ecc8f", backgroundColor: "#2ecc8f", tension: .3, yAxisID: "y1", order: 2, pointRadius: 2 },
+    ];
+    if (s.tem_conversoes) {
+      datasets.push({ type: "line", label: "Conversões", data: s.conversions, borderColor: "#ffb547", backgroundColor: "#ffb547", tension: .3, yAxisID: "y1", order: 1, pointRadius: 2 });
+    }
     trendChart = new Chart(ctx, {
-      data: {
-        labels: s.labels,
-        datasets: [
-          { type: "bar", label: "Investimento (R$)", data: s.spend, backgroundColor: "rgba(91,140,255,.45)", yAxisID: "y", order: 2 },
-          { type: "line", label: s.primary_label, data: s.primary, borderColor: "#2ecc8f", backgroundColor: "#2ecc8f", tension: .3, yAxisID: "y1", order: 1, pointRadius: 2 },
-        ],
-      },
+      data: { labels: s.labels, datasets },
       options: {
         ...baseOpts({}),
+        plugins: { legend: { labels: { color: "#e6eaf2" } } },
         scales: {
           x: { ticks: { color: "#93a0b8", maxRotation: 0, autoSkip: true }, grid: { color: "#222a3a" } },
-          y: { position: "left", ticks: { color: "#93a0b8" }, grid: { color: "#222a3a" } },
-          y1: { position: "right", ticks: { color: "#2ecc8f" }, grid: { drawOnChartArea: false } },
+          y: { position: "left", title: { display: true, text: "Investimento (R$)", color: "#93a0b8" }, ticks: { color: "#93a0b8" }, grid: { color: "#222a3a" } },
+          y1: { position: "right", title: { display: true, text: "Cliques / Conversões", color: "#93a0b8" }, ticks: { color: "#93a0b8" }, grid: { drawOnChartArea: false } },
         },
       },
     });

@@ -112,21 +112,24 @@ def _objective_blocks(meta_cur, google_cur, meta_prev, google_prev,
 # ----------------------------------------------------------------------------
 # Serie temporal
 # ----------------------------------------------------------------------------
-def _time_series(meta_cur, google_cur, primary_obj) -> dict:
-    cfg = M.objective_config(primary_obj)
-    primary = cfg["primary"]
+def _time_series(meta_cur, google_cur) -> dict:
+    """Evolucao diaria: Investimento (barra) x Cliques e Conversoes (linhas).
+
+    Conversoes = soma de todos os desfechos (conversoes + leads + conversas).
+    """
     days = sorted(set(meta_cur["date"]).union(set(google_cur["date"])))
-    labels, spend_s, primary_s = [], [], []
+    labels, spend_s, clicks_s, conv_s = [], [], [], []
     for d in days:
         md = meta_cur[meta_cur["date"] == d]
         gd = google_cur[google_cur["date"] == d]
+        s = M.sums(md, gd)
         labels.append(_fmt_date(d))
-        spend_s.append(round(M.kpi_value(md, gd, "spend"), 2))
-        primary_s.append(round(M.kpi_value(md, gd, primary), 4))
+        spend_s.append(round(s["spend"], 2))
+        clicks_s.append(int(round(s["clicks"])))
+        conv_s.append(round(s["conversions"] + s["leads"] + s["messaging"], 1))
     return {
-        "labels": labels, "spend": spend_s, "primary_key": primary,
-        "primary_label": M.KPI_CATALOG[primary]["label"],
-        "primary_fmt": M.KPI_CATALOG[primary]["fmt"], "primary": primary_s,
+        "labels": labels, "spend": spend_s, "clicks": clicks_s,
+        "conversions": conv_s, "tem_conversoes": sum(conv_s) > 0,
     }
 
 
@@ -342,7 +345,6 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None)
 
     history = M.sums(meta_all, google_all)
     blocks = _objective_blocks(meta_cur, google_cur, meta_prev, google_prev, meta_all, google_all)
-    primary_obj = blocks[0]["objective"] if blocks else "outros"
 
     return {
         "vazio": False,
@@ -354,7 +356,7 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None)
         "contas": contas_visiveis,
         "funil": _funnel(meta_cur, google_cur),
         "blocos_objetivo": blocks,
-        "serie_temporal": _time_series(meta_cur, google_cur, primary_obj),
+        "serie_temporal": _time_series(meta_cur, google_cur),
         "melhores_anuncios": _best_ads(meta_cur),
         "palavras_chave": _keywords(google_cur),
         "campanhas": _campaigns(meta_cur, google_cur),

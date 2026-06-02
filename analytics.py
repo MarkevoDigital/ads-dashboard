@@ -33,24 +33,36 @@ def _digits(v):
 # ----------------------------------------------------------------------------
 # Funil
 # ----------------------------------------------------------------------------
-def _funnel(meta_cur, google_cur, cfg, has_conv_history) -> dict:
-    s = M.sums(meta_cur, google_cur)
-    impressions = s["impressions"]
-    clicks = s["clicks"]
-    conv_key = cfg.get("conv_key", "conversions")
-    conversions = s.get(conv_key, s.get("conversions", 0))
+def _funnel(meta_cur, google_cur) -> dict:
+    """Impressoes -> Cliques -> (cada tipo de conversao com valor no periodo).
 
-    stages = [
-        {"label": "Impressões", "value": round(impressions), "fmt": "int"},
-        {"label": "Cliques", "value": round(clicks), "fmt": "int"},
-    ]
-    ctr = (clicks / impressions) if impressions else 0.0
-    rates = [{"label": "CTR", "value": round(ctr, 4)}]
-    if has_conv_history:
-        stages.append({"label": cfg.get("conv_label", "Conversões"),
-                       "value": round(conversions), "fmt": "int"})
-        rates.append({"label": "Taxa de conversão",
-                      "value": round(conversions / clicks if clicks else 0.0, 4)})
+    Mostra uma etapa por desfecho que o cliente realmente teve no periodo
+    (Conversoes, Leads, Conversas, Visitas, Views) — zerados sao omitidos.
+    Taxas = razao entre etapas consecutivas (CTR, taxa de conversao, etc.).
+    """
+    s = M.sums(meta_cur, google_cur)
+    clicks = s["clicks"]
+    seq = []
+    if s["impressions"] > 0:
+        seq.append(("Impressões", round(s["impressions"])))
+    seq.append(("Cliques", round(clicks)))
+    # desfechos de conversao, na ordem; so entram se > 0 no periodo
+    for label, val in [("Conversões", s["conversions"]), ("Leads", s["leads"]),
+                       ("Conversas", s["messaging"])]:
+        if val and val > 0:
+            seq.append((label, round(val)))
+
+    stages = [{"label": lb, "value": v, "fmt": "int"} for lb, v in seq]
+    # taxas: CTR (impr->cliques) e, para cada desfecho, % sobre os cliques
+    rates = []
+    for i in range(len(seq) - 1):
+        prev_lb, prev_v = seq[i]
+        nxt_lb, nxt_v = seq[i + 1]
+        if prev_lb == "Impressões" and nxt_lb == "Cliques":
+            rates.append({"label": "CTR", "value": round((nxt_v / prev_v) if prev_v else 0.0, 4)})
+        else:
+            rates.append({"label": f"Taxa de {nxt_lb.lower()}",
+                          "value": round((nxt_v / clicks) if clicks else 0.0, 4)})
     return {"stages": stages, "rates": rates}
 
 
@@ -331,8 +343,6 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None)
     history = M.sums(meta_all, google_all)
     blocks = _objective_blocks(meta_cur, google_cur, meta_prev, google_prev, meta_all, google_all)
     primary_obj = blocks[0]["objective"] if blocks else "outros"
-    cfg = M.objective_config(primary_obj)
-    has_conv_hist = history.get(cfg.get("conv_key", "conversions"), 0) > 0
 
     return {
         "vazio": False,
@@ -342,7 +352,7 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None)
             "anterior_inicio": _fmt_date(prev_start), "anterior_fim": _fmt_date(prev_end),
         },
         "contas": contas_visiveis,
-        "funil": _funnel(meta_cur, google_cur, cfg, has_conv_hist),
+        "funil": _funnel(meta_cur, google_cur),
         "blocos_objetivo": blocks,
         "serie_temporal": _time_series(meta_cur, google_cur, primary_obj),
         "melhores_anuncios": _best_ads(meta_cur),

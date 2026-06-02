@@ -98,6 +98,25 @@ def _paged_get(url, params):
     return out
 
 
+def _account_ids(meta_cfg: dict, token: str, version: str) -> list[str]:
+    """IDs das contas configuradas; se vazio, descobre todas via /me/adaccounts."""
+    ids = [a for a in (meta_cfg.get("ad_account_ids") or []) if a]
+    if ids:
+        return [a if a.startswith("act_") else f"act_{a}" for a in ids]
+    url = f"{GRAPH}/{version}/me/adaccounts"
+    params = {"fields": "account_id", "limit": 500, "access_token": token}
+    out = []
+    try:
+        for a in _paged_get(url, params):
+            aid = a.get("account_id")
+            if aid:
+                out.append(f"act_{aid}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[meta] descoberta de contas falhou: {exc}")
+    print(f"[meta] {len(out)} contas descobertas automaticamente.")
+    return out
+
+
 def _thumbnails(account_id, token, version) -> dict:
     """Mapa ad_id -> URL do thumbnail do criativo (o 'print' do anuncio)."""
     url = f"{GRAPH}/{version}/{account_id}/ads"
@@ -137,10 +156,7 @@ def fetch(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
     since = until - timedelta(days=days - 1)
 
     rows = []
-    for account_id in meta_cfg.get("ad_account_ids", []):
-        if not account_id:
-            continue
-        account_id = account_id if account_id.startswith("act_") else f"act_{account_id}"
+    for account_id in _account_ids(meta_cfg, token, version):
         thumbs = _thumbnails(account_id, token, version)
 
         url = f"{GRAPH}/{version}/{account_id}/insights"
@@ -207,10 +223,7 @@ def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
     until = datetime.today().date()
     since = until - timedelta(days=days - 1)
     rows = []
-    for account_id in meta_cfg.get("ad_account_ids", []):
-        if not account_id:
-            continue
-        account_id = account_id if account_id.startswith("act_") else f"act_{account_id}"
+    for account_id in _account_ids(meta_cfg, token, version):
         url = f"{GRAPH}/{version}/{account_id}/insights"
         params = {
             "level": "account", "breakdowns": "region", "time_increment": 1,

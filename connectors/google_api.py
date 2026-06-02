@@ -16,9 +16,30 @@ por isso aparecem apenas nos totais, nao na tabela de palavras-chave.
 """
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime, timedelta
 
 import pandas as pd
+
+from connectors.meta_api import BR_STATE_COORDS
+
+
+def _norm(s: str) -> str:
+    s = unicodedata.normalize("NFKD", str(s))
+    return "".join(c for c in s if not unicodedata.combining(c)).strip().lower()
+
+
+def _state_key(name: str) -> str:
+    """Normaliza nome de estado do Google ('State of Sao Paulo') p/ casar no lookup."""
+    k = _norm(name)
+    for pref in ("state of ", "estado de ", "estado do ", "estado da "):
+        if k.startswith(pref):
+            k = k[len(pref):]
+    return k.strip()
+
+
+# lookup normalizado: nome do estado (sem acento, minusculo) -> (nome, lat, lng)
+_STATE_BY_NORM = {_norm(k): (k, v[0], v[1]) for k, v in BR_STATE_COORDS.items()}
 
 # canal de veiculacao -> bucket do dashboard (ajustavel por campaign_objective_map)
 CHANNEL_OBJECTIVE = {
@@ -146,7 +167,72 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
 
 
 def fetch_geo(g_cfg: dict, days: int = 60) -> pd.DataFrame:
-    """Geo do Google Ads. Pendente: o geographic_view retorna IDs de localizacao
-    sem coordenadas; resolver coords exige um mapeamento adicional. Por ora o mapa
-    de calor usa os dados de regiao do Meta. Retorna vazio (nao bloqueia o refresh)."""
-    return pd.DataFrame()
+    """Cliques por estado (regiao) no Google Ads, com coordenadas p/ o mapa de calor.
+
+    A API nao devolve coordenadas: consultamos geographic_view por geo_target_region,
+    resolvemos o id da regiao -> nome via geo_target_constant, e mapeamos o nome do
+    estado para os centroides BR_STATE_COORDS (mesmos do Meta -> mapa consistente).
+    """
+    if not g_cfg.get("developer_token") or not g_cfg.get("refresh_token"):
+        return pd.DataFrame()
+    from google.ads.googleads.errors import GoogleAdsException
+
+    client = _client(g_cfg)
+    service = client.get_service("GoogleAdsService")
+    since, until = _date_range(days)
+    rows = []
+
+    geo_query = f"""
+        SELECT segments.geo_target_region, segments.date,
+               geographic_view.location_type, metrics.clicks
+        FROM geographic_view
+        WHERE segments.date BETWEEN '{since}' AND '{until}'
+    """
+
+    def _rid(resource_name):
+        # "geoTargetConstants/20106" -> "20106"
+        return str(resource_name).rsplit("/", 1)[-1] if resource_name else ""
+
+    for cid in g_cfg.get("customer_ids", []):
+        cid = str(cid).replace("-", "")
+        if not cid:
+            continue
+        raw, region_ids = [], set()
+        try:
+            for batch in service.search_stream(customer_id=cid, query=geo_query):
+                for row in batch.results:
+                    # cliques por presenca fisica (evita dupla contagem com area de interesse)
+                    if row.geographic_view.location_type.name != "LOCATION_OF_PRESENCE":
+                        continue
+                    rid = _rid(row.segments.geo_target_region)
+                    if not rid:
+                        continue
+                    region_ids.add(rid)
+                    raw.append((str(row.segments.date), rid, float(row.metrics.clicks)))
+        except GoogleAdsException as exc:
+            print(f"[google-geo] {cid}: {exc}")
+            continue
+        if not raw:
+            continue
+        # resolve id da regiao -> nome do estado
+        names = {}
+        try:
+            in_clause = ",".join(sorted(region_ids))
+            gtc_query = (
+                "SELECT geo_target_constant.id, geo_target_constant.name "
+                "FROM geo_target_constant "
+                f"WHERE geo_target_constant.id IN ({in_clause})"
+            )
+            for batch in service.search_stream(customer_id=cid, query=gtc_query):
+                for row in batch.results:
+                    names[str(row.geo_target_constant.id)] = row.geo_target_constant.name
+        except GoogleAdsException as exc:
+            print(f"[google-geo] resolve {cid}: {exc}")
+        for date, rid, clk in raw:
+            match = _STATE_BY_NORM.get(_state_key(names.get(rid, "")))
+            if not match:
+                continue
+            state, lat, lng = match
+            rows.append({"date": date, "account_id": cid, "platform": "google",
+                         "city": state, "lat": lat, "lng": lng, "clicks": clk})
+    return pd.DataFrame(rows)

@@ -157,61 +157,62 @@ def fetch(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
 
     rows = []
     for account_id in _account_ids(meta_cfg, token, version):
-        thumbs = _thumbnails(account_id, token, version)
-
-        url = f"{GRAPH}/{version}/{account_id}/insights"
-        params = {
-            "level": "ad",
-            "time_increment": 1,
-            "time_range": f'{{"since":"{since}","until":"{until}"}}',
-            "fields": ",".join([
-                "ad_id", "ad_name", "adset_name", "campaign_name", "objective",
-                "account_name", "impressions", "reach", "frequency", "clicks",
-                "inline_link_clicks", "spend", "actions", "action_values",
-            ]),
-            "limit": 500,
-            "access_token": token,
-        }
-        for r in _paged_get(url, params):
-            actions = r.get("actions", [])
-            action_values = r.get("action_values", [])
-            msg = _first_action(actions, ACTION_KEYS["messaging_conversations"])
-            visits = _first_action(actions, ACTION_KEYS["profile_visits"])
-            purchases = _first_action(actions, ACTION_KEYS["purchases"])
-            leads = _first_action(actions, ACTION_KEYS["leads"])
-            revenue = _first_action(action_values, ACTION_KEYS["purchases"])
-            site_visits = _first_action(actions, ACTION_KEYS["site_visits"])
-            video_views = _first_action(actions, ACTION_KEYS["video_views"])
-            engagement = _first_action(actions, ACTION_KEYS["engagement"])
-            objective = _resolve_objective(r.get("objective", ""), msg, visits, obj_map)
-            ad_id = r.get("ad_id", "")
-            rows.append({
-                "date": r.get("date_start"),
-                "account": r.get("account_name") or account_id,
-                "account_id": account_id.replace("act_", ""),
-                "objective": objective,
-                "campaign": r.get("campaign_name", ""),
-                "adset": r.get("adset_name", ""),
-                "ad_name": r.get("ad_name", ""),
-                "ad_thumbnail_url": thumbs.get(ad_id, ""),
-                "ad_permalink": "",
-                "impressions": float(r.get("impressions", 0) or 0),
-                "reach": float(r.get("reach", 0) or 0),
-                "frequency": float(r.get("frequency", 0) or 0),
-                "clicks": float(r.get("clicks", 0) or 0),
-                "link_clicks": float(r.get("inline_link_clicks", 0) or 0),
-                "spend": float(r.get("spend", 0) or 0),
-                "messaging_conversations": msg,
-                "profile_visits": visits,
-                "leads": leads,
-                "purchases": purchases,
-                "purchase_value": revenue,
-                "site_visits": site_visits,
-                "video_views": video_views,
-                "engagement": engagement,
-            })
-
+        try:
+            rows.extend(_fetch_account_rows(account_id, token, version, since, until, obj_map))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[meta] conta {account_id} falhou (ignorada): {exc}")
     return pd.DataFrame(rows)
+
+
+def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> list[dict]:
+    thumbs = _thumbnails(account_id, token, version)
+    url = f"{GRAPH}/{version}/{account_id}/insights"
+    params = {
+        "level": "ad", "time_increment": 1,
+        "time_range": f'{{"since":"{since}","until":"{until}"}}',
+        "fields": ",".join([
+            "ad_id", "ad_name", "adset_name", "campaign_name", "objective",
+            "account_name", "impressions", "reach", "frequency", "clicks",
+            "inline_link_clicks", "spend", "actions", "action_values",
+        ]),
+        "limit": 500, "access_token": token,
+    }
+    out = []
+    for r in _paged_get(url, params):
+        actions = r.get("actions", [])
+        action_values = r.get("action_values", [])
+        msg = _first_action(actions, ACTION_KEYS["messaging_conversations"])
+        visits = _first_action(actions, ACTION_KEYS["profile_visits"])
+        purchases = _first_action(actions, ACTION_KEYS["purchases"])
+        leads = _first_action(actions, ACTION_KEYS["leads"])
+        revenue = _first_action(action_values, ACTION_KEYS["purchases"])
+        site_visits = _first_action(actions, ACTION_KEYS["site_visits"])
+        video_views = _first_action(actions, ACTION_KEYS["video_views"])
+        engagement = _first_action(actions, ACTION_KEYS["engagement"])
+        objective = _resolve_objective(r.get("objective", ""), msg, visits, obj_map)
+        ad_id = r.get("ad_id", "")
+        out.append({
+            "date": r.get("date_start"),
+            "account": r.get("account_name") or account_id,
+            "account_id": account_id.replace("act_", ""),
+            "objective": objective,
+            "campaign": r.get("campaign_name", ""),
+            "adset": r.get("adset_name", ""),
+            "ad_name": r.get("ad_name", ""),
+            "ad_thumbnail_url": thumbs.get(ad_id, ""),
+            "ad_permalink": "",
+            "impressions": float(r.get("impressions", 0) or 0),
+            "reach": float(r.get("reach", 0) or 0),
+            "frequency": float(r.get("frequency", 0) or 0),
+            "clicks": float(r.get("clicks", 0) or 0),
+            "link_clicks": float(r.get("inline_link_clicks", 0) or 0),
+            "spend": float(r.get("spend", 0) or 0),
+            "messaging_conversations": msg,
+            "profile_visits": visits, "leads": leads, "purchases": purchases,
+            "purchase_value": revenue, "site_visits": site_visits,
+            "video_views": video_views, "engagement": engagement,
+        })
+    return out
 
 
 def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:

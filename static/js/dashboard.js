@@ -61,9 +61,14 @@
     if (data.vazio) {
       $("period-info").textContent = "";
       $("funnel").innerHTML = "";
-      $("comments").innerHTML = `<div class="comment info">Sem dados no periodo selecionado.</div>`;
+      if (data.carregando) {
+        $("comments").innerHTML = `<div class="comment info">⏳ Carregando os dados pela primeira vez (pode levar 1–2 min). Atualize a página em instantes.</div>`;
+        setTimeout(load, 15000);  // re-tenta sozinho enquanto carrega
+      } else {
+        $("comments").innerHTML = `<div class="comment info">Sem dados no periodo selecionado.</div>`;
+      }
       $("objective-blocks").innerHTML = "";
-      $("best-ads").innerHTML = `<div class="empty">Sem anuncios.</div>`;
+      $("best-ads").innerHTML = `<div class="empty">${data.carregando ? "Carregando…" : "Sem anuncios."}</div>`;
       $("keywords-wrap").innerHTML = ""; $("campaigns-wrap").innerHTML = "";
       $("geo-section").classList.add("hidden");
       return;

@@ -177,6 +177,9 @@ def api_data():
     scope = g.client.get("scope") if hasattr(g, "client") else None
     payload = analytics.build_payload(
         store, account=account, platform=platform, days=days, scope=scope)
+    # Distingue "carregando" (cache ainda vazio logo apos reiniciar) de "sem dados".
+    if payload.get("vazio") and store.updated_at is None:
+        payload["carregando"] = True
     payload["comentarios"] = commentary.generate(payload)
     payload["meta_info"] = {
         "atualizado_em": store.updated_at.isoformat() if store.updated_at else None,

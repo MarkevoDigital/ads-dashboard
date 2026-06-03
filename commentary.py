@@ -80,13 +80,15 @@ def generate(payload: dict) -> dict:
             txt += f" (taxa de conversão de {fmt(taxa['value'], 'pct')})"
         destaques.append(txt + ".")
 
-    # 3) Melhor anuncio
+    # 3) Melhor anuncio (destaque = nº de resultados; eficiencia como apoio)
     ads = payload.get("melhores_anuncios") or []
     if ads:
         a = ads[0]
-        destaques.append(
-            f"🏆 Melhor anúncio: \"{a['ad_name']}\" — {a['metric_label']} de "
-            f"{fmt(a['metric_value'], a['metric_fmt'])}. Bom candidato a escalar.")
+        txt = (f"🏆 Melhor anúncio: \"{a['ad_name']}\" — "
+               f"{fmt(a['result_value'], a['result_fmt'])} {a['result_label'].lower()}")
+        if a.get("eff_label"):
+            txt += f" ({a['eff_label']} de {fmt(a['eff_value'], a['eff_fmt'])})"
+        destaques.append(txt + ". Bom candidato a escalar.")
 
     # 4) Melhor palavra-chave (se houver conversoes)
     kws = payload.get("palavras_chave") or []

@@ -19,6 +19,7 @@ if os.path.exists(bundle):
 import pandas as pd  # noqa: E402
 import data_sources as d  # noqa: E402
 import analytics  # noqa: E402
+import commentary  # noqa: E402
 from connectors import meta_api, google_api  # noqa: E402
 
 cfg = d.load_config()
@@ -40,6 +41,9 @@ try:
     print("BUILD OK | vazio:", p.get("vazio"))
     print("best_ads:", len(p.get("melhores_anuncios", [])),
           "| campanhas:", len(p.get("campanhas", [])))
+    # commentary.generate roda no /api/data — precisa ser testado tambem
+    c = commentary.generate(p)
+    print("COMMENTARY OK | destaques:", len(c.get("destaques", [])))
 except Exception:
     print("=== TRACEBACK build_payload ===")
     traceback.print_exc()

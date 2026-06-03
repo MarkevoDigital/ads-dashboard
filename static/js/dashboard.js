@@ -85,10 +85,10 @@
         $("comments").innerHTML = `<div class="comment info">⏳ Carregando os dados pela primeira vez (pode levar 1–2 min). Atualize a página em instantes.</div>`;
         setTimeout(load, 15000);  // re-tenta sozinho enquanto carrega
       } else {
-        $("comments").innerHTML = `<div class="comment info">Sem dados no periodo selecionado.</div>`;
+        $("comments").innerHTML = `<div class="comment info">Sem dados no período selecionado.</div>`;
       }
       $("objective-blocks").innerHTML = "";
-      $("best-ads").innerHTML = `<div class="empty">${data.carregando ? "Carregando…" : "Sem anuncios."}</div>`;
+      $("best-ads").innerHTML = `<div class="empty">${data.carregando ? "Carregando…" : "Sem anúncios."}</div>`;
       $("keywords-wrap").innerHTML = ""; $("campaigns-wrap").innerHTML = "";
       $("geo-section").classList.add("hidden");
       return;
@@ -157,7 +157,7 @@
   // ---- Melhores anuncios ----
   function renderBestAds(ads) {
     const wrap = $("best-ads");
-    if (!ads || !ads.length) { wrap.innerHTML = `<div class="empty">Sem anuncios com investimento relevante.</div>`; return; }
+    if (!ads || !ads.length) { wrap.innerHTML = `<div class="empty">Sem anúncios com investimento relevante.</div>`; return; }
     wrap.innerHTML = ads.map((a, i) => `
       <div class="ad-card" style="position:relative">
         <div class="rank-badge">${i + 1}</div>
@@ -173,7 +173,7 @@
   // ---- Campanhas por plataforma ----
   function renderCampaigns(rows) {
     const wrap = $("campaigns-wrap");
-    if (!rows || !rows.length) { wrap.innerHTML = `<div class="empty">Sem campanhas no periodo.</div>`; return; }
+    if (!rows || !rows.length) { wrap.innerHTML = `<div class="empty">Sem campanhas no período.</div>`; return; }
     // Colunas extras (views de video, visitas ao Instagram, engajamento) so aparecem
     // se houver valor > 0 em alguma campanha — respeita a regra de ocultar zerados.
     const extra = [
@@ -213,10 +213,10 @@
     if (!cp) return;
     const m = cp.meta, g = cp.google;
     $("platform-table").innerHTML = `<table>
-      <thead><tr><th>Metrica</th><th>Meta</th><th>Google</th></tr></thead><tbody>
+      <thead><tr><th>Métrica</th><th>Meta</th><th>Google</th></tr></thead><tbody>
         <tr><td>Investimento</td><td>${fmt(m.spend, "currency")}</td><td>${fmt(g.spend, "currency")}</td></tr>
         <tr><td>Cliques</td><td>${fmt(m.clicks, "int")}</td><td>${fmt(g.clicks, "int")}</td></tr>
-        <tr><td>Conversoes</td><td>${fmt(m.conversions, "int")}</td><td>${fmt(g.conversions, "int")}</td></tr>
+        <tr><td>Conversões</td><td>${fmt(m.conversions, "int")}</td><td>${fmt(g.conversions, "int")}</td></tr>
         <tr><td>CPC</td><td>${fmt(m.cpc, "currency")}</td><td>${fmt(g.cpc, "currency")}</td></tr>
       </tbody></table>`;
     const ctx = $("platform-chart");
@@ -224,7 +224,7 @@
     platformChart = new Chart(ctx, {
       type: "bar",
       data: {
-        labels: ["Investimento", "Cliques", "Conversoes"],
+        labels: ["Investimento", "Cliques", "Conversões"],
         datasets: [
           { label: "Meta", data: [m.spend, m.clicks, m.conversions], backgroundColor: "#5b8cff" },
           { label: "Google", data: [g.spend, g.clicks, g.conversions], backgroundColor: "#2ecc8f" },
@@ -244,8 +244,8 @@
       return `<tr><td>${r.label}</td><td>${fmt(r.current, r.fmt)}</td>
         <td>${fmt(r.previous, r.fmt)}</td><td class="${cls}">${dtxt}</td></tr>`;
     }).join("");
-    $("period-wrap").innerHTML = `<table><thead><tr><th>Metrica</th><th>Atual</th>
-      <th>Anterior</th><th>Variacao</th></tr></thead><tbody>${rows}</tbody></table>`;
+    $("period-wrap").innerHTML = `<table><thead><tr><th>Métrica</th><th>Atual</th>
+      <th>Anterior</th><th>Variação</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   // ---- Serie temporal ----

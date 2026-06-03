@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard de Ads — Meta + Google</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=4">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -33,12 +33,12 @@
           <option value="google">Somente Google</option>
         </select>
       </label>
-      <label>Periodo
+      <label>Período
         <select id="f-days">
-          <option value="7">Ultimos 7 dias</option>
-          <option value="14">Ultimos 14 dias</option>
-          <option value="30" selected>Ultimos 30 dias</option>
-          <option value="60">Ultimos 60 dias</option>
+          <option value="7">Últimos 7 dias</option>
+          <option value="14">Últimos 14 dias</option>
+          <option value="30" selected>Últimos 30 dias</option>
+          <option value="60">Últimos 60 dias</option>
         </select>
       </label>
       <button id="f-refresh" title="Recarregar dados da fonte">⟳ Atualizar</button>
@@ -65,7 +65,7 @@
 
     <!-- Serie temporal -->
     <section class="card">
-      <h2>📈 Evolucao diaria</h2>
+      <h2>📈 Evolução diária</h2>
       <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
     </section>
 
@@ -74,15 +74,15 @@
 
     <!-- Melhores anuncios -->
     <section class="card">
-      <h2>🏆 Melhores anuncios</h2>
-      <p class="hint">Criativo destaque por objetivo (com print do anuncio).</p>
+      <h2>🏆 Melhores anúncios</h2>
+      <p class="hint">Criativo destaque por objetivo (com print do anúncio).</p>
       <div id="best-ads" class="ads-grid"></div>
     </section>
 
     <!-- Campanhas por plataforma -->
     <section class="card">
       <h2>🗂️ Campanhas por plataforma</h2>
-      <p class="hint">Campanhas com veiculacao no periodo filtrado.</p>
+      <p class="hint">Campanhas com veiculação no período filtrado.</p>
       <div id="campaigns-wrap" class="table-wrap"></div>
     </section>
 
@@ -100,21 +100,21 @@
 
     <!-- Comparativo de periodo -->
     <section class="card">
-      <h2>🔁 Periodo atual vs. anterior</h2>
+      <h2>🔁 Período atual vs. anterior</h2>
       <div id="period-wrap" class="table-wrap"></div>
     </section>
 
     <!-- Mapa de calor geografico -->
     <section class="card" id="geo-section">
-      <h2>📍 Mapa de calor — cliques por localizacao</h2>
+      <h2>📍 Mapa de calor — cliques por localização</h2>
       <div id="geo-map" class="geo-map"></div>
       <div id="geo-top" class="geo-top"></div>
     </section>
   </main>
 
   <div id="loading" class="loading hidden">Carregando…</div>
-  <footer class="foot">Atualizacao automatica diaria · Meta Ads + Google Ads</footer>
+  <footer class="foot">Atualização automática diária · Meta Ads + Google Ads</footer>
 
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=4"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=5"></script>
 </body>
 </html>

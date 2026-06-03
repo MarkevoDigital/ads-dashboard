@@ -13,6 +13,7 @@ Observacoes:
 """
 from __future__ import annotations
 
+import unicodedata
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -55,19 +56,31 @@ ACTION_KEYS = {
 }
 
 # Centroides aproximados dos estados (Meta faz breakdown por "region" = estado).
+# Nomes acentuados (exibicao); a busca usa forma normalizada (sem acento) p/ casar
+# qualquer que seja a grafia retornada pela API.
 BR_STATE_COORDS = {
-    "Acre": (-9.02, -70.81), "Alagoas": (-9.57, -36.78), "Amapa": (1.41, -51.77),
-    "Amazonas": (-3.42, -65.86), "Bahia": (-12.58, -41.70), "Ceara": (-5.20, -39.53),
-    "Distrito Federal": (-15.78, -47.93), "Espirito Santo": (-19.19, -40.31),
-    "Goias": (-15.93, -49.84), "Maranhao": (-5.42, -45.44), "Mato Grosso": (-12.64, -55.42),
+    "Acre": (-9.02, -70.81), "Alagoas": (-9.57, -36.78), "Amapá": (1.41, -51.77),
+    "Amazonas": (-3.42, -65.86), "Bahia": (-12.58, -41.70), "Ceará": (-5.20, -39.53),
+    "Distrito Federal": (-15.78, -47.93), "Espírito Santo": (-19.19, -40.31),
+    "Goiás": (-15.93, -49.84), "Maranhão": (-5.42, -45.44), "Mato Grosso": (-12.64, -55.42),
     "Mato Grosso do Sul": (-20.51, -54.54), "Minas Gerais": (-18.10, -44.38),
-    "Para": (-3.79, -52.48), "Paraiba": (-7.28, -36.72), "Parana": (-24.89, -51.55),
-    "Pernambuco": (-8.38, -37.86), "Piaui": (-6.60, -42.28),
+    "Pará": (-3.79, -52.48), "Paraíba": (-7.28, -36.72), "Paraná": (-24.89, -51.55),
+    "Pernambuco": (-8.38, -37.86), "Piauí": (-6.60, -42.28),
     "Rio de Janeiro": (-22.25, -42.66), "Rio Grande do Norte": (-5.81, -36.59),
-    "Rio Grande do Sul": (-30.17, -53.50), "Rondonia": (-10.83, -63.34),
+    "Rio Grande do Sul": (-30.17, -53.50), "Rondônia": (-10.83, -63.34),
     "Roraima": (1.99, -61.33), "Santa Catarina": (-27.45, -50.95),
-    "Sao Paulo": (-22.19, -48.79), "Sergipe": (-10.57, -37.45), "Tocantins": (-9.46, -48.26),
+    "São Paulo": (-22.19, -48.79), "Sergipe": (-10.57, -37.45), "Tocantins": (-9.46, -48.26),
 }
+
+
+def _norm_state(s: str) -> str:
+    """Normaliza nome de estado (sem acento, minusculo) para casar na busca."""
+    s = unicodedata.normalize("NFKD", str(s))
+    return "".join(c for c in s if not unicodedata.combining(c)).strip().lower()
+
+
+# lookup: nome normalizado -> (nome acentuado p/ exibicao, lat, lng)
+_STATE_BY_NORM = {_norm_state(k): (k, v[0], v[1]) for k, v in BR_STATE_COORDS.items()}
 
 
 def _first_action(actions, keys) -> float:
@@ -237,14 +250,14 @@ def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
         }
         try:
             for r in _paged_get(url, params):
-                region = r.get("region", "")
-                coords = BR_STATE_COORDS.get(region)
-                if not coords:
+                match = _STATE_BY_NORM.get(_norm_state(r.get("region", "")))
+                if not match:
                     continue
+                name, lat, lng = match
                 rows.append({
                     "date": r.get("date_start"), "account_id": account_id.replace("act_", ""),
-                    "platform": "meta", "city": region,
-                    "lat": coords[0], "lng": coords[1], "clicks": float(r.get("clicks", 0) or 0),
+                    "platform": "meta", "city": name,
+                    "lat": lat, "lng": lng, "clicks": float(r.get("clicks", 0) or 0),
                 })
         except Exception as exc:  # noqa: BLE001
             print(f"[meta-geo] {account_id}: {exc}")

@@ -50,24 +50,32 @@ def generate(payload: dict) -> dict:
     else:
         resumo = f"Resumo do período {p.get('inicio')} a {p.get('fim')}."
 
-    # 1) Variacoes FAVORAVEIS (foco positivo)
+    # 1) Variacoes FAVORAVEIS (foco positivo). Cada metrica traz (rotulo, plural)
+    # para a concordancia verbal correta (ex.: "as conversões cresceram").
     nomes_amig = {
-        "conversions": "as conversões", "revenue": "a receita", "ctr": "o CTR",
-        "clicks": "os cliques", "impressions": "as impressões", "cpc": "o CPC",
-        "cpa": "o custo por conversão (CPA)", "spend": "o investimento",
+        "conversions": ("as conversões", True), "revenue": ("a receita", False),
+        "ctr": ("o CTR", False), "clicks": ("os cliques", True),
+        "impressions": ("as impressões", True), "cpc": ("o CPC", False),
+        "cpa": ("o custo por conversão (CPA)", False), "spend": ("o investimento", False),
     }
-    for key, label in nomes_amig.items():
+    for key, (label, plural) in nomes_amig.items():
         m = by_key.get(key)
         if not m or m.get("delta_pct") is None or not m.get("good"):
             continue
         d = m["delta_pct"]
         if abs(d) < 1:
             continue
+        # capitaliza so a 1a letra (preserva siglas como CTR/CPC/CPA)
+        cap = label[0].upper() + label[1:]
         if m["fmt"] in ("currency",) and key in ("cpc", "cpa"):
-            destaques.append(f"💸 {label.capitalize()} reduziu {_pct(d)}, agora em {fmt(m['current'], m['fmt'])}.")
+            verbo = "reduziram" if plural else "reduziu"
+            destaques.append(f"💸 {cap} {verbo} {_pct(d)}, agora em {fmt(m['current'], m['fmt'])}.")
         else:
-            verbo = "cresceu" if d > 0 else "caiu"
-            destaques.append(f"📈 {label.capitalize()} {verbo} {_pct(d)}, chegando a {fmt(m['current'], m['fmt'])}.")
+            if d > 0:
+                verbo = "cresceram" if plural else "cresceu"
+            else:
+                verbo = "caíram" if plural else "caiu"
+            destaques.append(f"📈 {cap} {verbo} {_pct(d)}, chegando a {fmt(m['current'], m['fmt'])}.")
 
     # 2) Funil: conversoes geradas
     fun = payload.get("funil") or {}

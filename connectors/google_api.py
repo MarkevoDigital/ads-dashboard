@@ -76,6 +76,53 @@ def _date_range(days):
     return since.isoformat(), until.isoformat()
 
 
+def _digits(value) -> str:
+    return "".join(ch for ch in str(value) if ch.isdigit())
+
+
+def _customer_ids(g_cfg: dict, client) -> list[str]:
+    """IDs das contas a consultar.
+
+    Usa os customer_ids configurados (se houver e nao forem placeholder); caso
+    contrario, DESCOBRE automaticamente todas as contas-cliente sob o MCC
+    (login_customer_id) via customer_client — espelha a descoberta do Meta, para
+    que clientes novos entrem sozinhos sem editar a lista a cada vez.
+    """
+    ids = []
+    for c in (g_cfg.get("customer_ids") or []):
+        d = _digits(c)
+        if d and set(d) != {"0"}:  # ignora vazio e placeholder (so zeros)
+            ids.append(d)
+    if ids:
+        return ids
+    login = _digits(g_cfg.get("login_customer_id", ""))
+    if not login:
+        return []
+    try:
+        from google.ads.googleads.errors import GoogleAdsException  # noqa
+        service = client.get_service("GoogleAdsService")
+        query = """
+            SELECT customer_client.id, customer_client.manager,
+                   customer_client.status, customer_client.level
+            FROM customer_client
+            WHERE customer_client.status = 'ENABLED'
+        """
+        out, seen = [], set()
+        for batch in service.search_stream(customer_id=login, query=query):
+            for row in batch.results:
+                if row.customer_client.manager:  # pula MCCs (so contas folha)
+                    continue
+                cid = str(row.customer_client.id)
+                if cid not in seen:
+                    seen.add(cid)
+                    out.append(cid)
+        print(f"[google] {len(out)} contas descobertas no MCC {login}.")
+        return out
+    except Exception as exc:  # noqa: BLE001
+        print(f"[google] descoberta de contas falhou: {exc}")
+        return []
+
+
 def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     if not g_cfg.get("developer_token") or not g_cfg.get("refresh_token"):
         return pd.DataFrame()
@@ -110,10 +157,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
 
     match_type_pt = {0: "", 1: "", 2: "Exata", 3: "Frase", 4: "Ampla"}
 
-    for cid in g_cfg.get("customer_ids", []):
-        cid = str(cid).replace("-", "")
-        if not cid:
-            continue
+    for cid in _customer_ids(g_cfg, client):
         try:
             # Palavras-chave (Pesquisa)
             for batch in service.search_stream(customer_id=cid, query=kw_query):
@@ -193,10 +237,7 @@ def fetch_geo(g_cfg: dict, days: int = 60) -> pd.DataFrame:
         # "geoTargetConstants/20106" -> "20106"
         return str(resource_name).rsplit("/", 1)[-1] if resource_name else ""
 
-    for cid in g_cfg.get("customer_ids", []):
-        cid = str(cid).replace("-", "")
-        if not cid:
-            continue
+    for cid in _customer_ids(g_cfg, client):
         raw, region_ids = [], set()
         try:
             for batch in service.search_stream(customer_id=cid, query=geo_query):

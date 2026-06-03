@@ -142,12 +142,21 @@ def _best_ads(meta_cur, limit=6) -> list[dict]:
     total_spend = meta_cur["spend"].sum()
     min_spend = max(total_spend * 0.01, 20)
     rows = []
-    grouped = meta_cur.groupby(
-        ["ad_name", "account", "objective", "ad_thumbnail_url", "ad_permalink"], dropna=False)
     empty = pd.DataFrame(columns=["impressions", "clicks", "cost", "conversions", "conversion_value"])
-    for (ad, acc, obj, thumb, link), g in grouped:
+    # Unifica anuncios com o MESMO nome (na mesma conta). A Meta gera ad_ids/thumbnails
+    # distintos para copias do mesmo criativo (URLs assinadas diferentes); agrupar so por
+    # nome+conta junta esses dados em vez de mostrar linhas duplicadas.
+    for (ad, acc), g in meta_cur.groupby(["ad_name", "account"], dropna=False):
+        if not str(ad).strip():
+            continue
         if g["spend"].sum() < min_spend:
             continue
+        objs = g["objective"].mode()
+        obj = objs.iloc[0] if len(objs) else "outros"
+        thumbs = [t for t in g["ad_thumbnail_url"].astype(str) if t and t.lower() != "nan"]
+        thumb = thumbs[0] if thumbs else ""
+        links = [l for l in g["ad_permalink"].astype(str) if l and l.lower() != "nan"]
+        link = links[0] if links else ""
         cfg = M.objective_config(obj)
         metric_key = cfg["best_ad_metric"]
         spec = M.KPI_CATALOG[metric_key]

@@ -20,7 +20,8 @@
       "client_secret": "",
       "refresh_token": "",
       "login_customer_id": "",
-      "customer_ids": ["0000000000"],
+      "_customer_ids": "deixe vazio p/ descobrir todas as contas do MCC automaticamente",
+      "customer_ids": [],
       "_objetivo": "opcional: nome_da_campanha -> objetivo (vendas/leads/...)",
       "campaign_objective_map": {}
     }

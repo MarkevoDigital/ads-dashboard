@@ -189,18 +189,28 @@ def api_data():
     return jsonify(payload)
 
 
+def _bg_refresh():
+    """Refresh em background (nao bloqueia a requisicao -> sem timeout no cron)."""
+    try:
+        print("[refresh]", store.refresh())
+    except Exception as exc:  # noqa: BLE001
+        print(f"[refresh] falhou: {exc}")
+
+
 @app.route("/api/refresh", methods=["POST"])
 @requires_auth
 def api_refresh():
-    return jsonify(store.refresh())
+    threading.Thread(target=_bg_refresh, daemon=True).start()
+    return jsonify({"ok": True, "msg": "Atualizacao iniciada em background."})
 
 
 @app.route("/cron/refresh")
 def cron_refresh():
-    """Para tarefa agendada externa: GET /cron/refresh?token=SEU_TOKEN"""
+    """Para tarefa agendada (cron): GET /cron/refresh?token=SEU_TOKEN"""
     if not CRON_TOKEN or request.args.get("token") != CRON_TOKEN:
         return jsonify({"erro": "token invalido"}), 403
-    return jsonify(store.refresh())
+    threading.Thread(target=_bg_refresh, daemon=True).start()
+    return jsonify({"ok": True, "msg": "Refresh iniciado em background."})
 
 
 @app.route("/healthz")

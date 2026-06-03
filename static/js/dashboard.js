@@ -3,7 +3,7 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
-  let trendChart = null, platformChart = null, accountsLoaded = false;
+  let trendChart = null, platformChart = null, clientLoaded = false, accountsSig = null;
   let geoMap = null, heatLayer = null;
 
   const nf = new Intl.NumberFormat("pt-BR");
@@ -33,6 +33,7 @@
     $("loading").classList.remove("hidden");
     const params = new URLSearchParams({
       account: $("f-account").value, platform: $("f-platform").value, days: $("f-days").value,
+      client: $("f-client") ? $("f-client").value : "",
     });
     try {
       const res = await fetch("/api/data?" + params.toString());
@@ -46,15 +47,34 @@
   }
 
   function render(data) {
-    if (!accountsLoaded && data.contas) {
-      const sel = $("f-account");
-      data.contas.forEach((c) => {
-        const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o);
+    // Seletor "Ver como" (somente admin/agência): popula uma vez e revela.
+    if (data.clientes_admin && !clientLoaded) {
+      const cs = $("f-client");
+      data.clientes_admin.forEach((c) => {
+        const o = document.createElement("option"); o.value = c.key; o.textContent = c.nome; cs.appendChild(o);
       });
-      accountsLoaded = true;
+      $("f-client-wrap").classList.remove("hidden");
+      clientLoaded = true;
+    }
+    // Contas: (re)popula quando o conjunto muda (ex.: admin trocou de cliente).
+    if (data.contas) {
+      const sig = data.contas.join("|");
+      if (sig !== accountsSig) {
+        const sel = $("f-account");
+        sel.innerHTML = `<option value="todas">Todas as contas</option>`;
+        data.contas.forEach((c) => {
+          const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o);
+        });
+        accountsSig = sig;
+      }
     }
     const mi = data.meta_info || {};
-    if (mi.cliente) $("cliente-sub").textContent = mi.cliente;
+    if (data.cliente_sel && $("f-client")) {
+      const opt = $("f-client").options[$("f-client").selectedIndex];
+      $("cliente-sub").textContent = "Vendo como: " + (opt ? opt.textContent : data.cliente_sel);
+    } else if (mi.cliente) {
+      $("cliente-sub").textContent = mi.cliente;
+    }
     $("src-info").textContent = "Fonte: " + (mi.fonte || "—") +
       (mi.atualizado_em ? " · atualizado " + new Date(mi.atualizado_em).toLocaleString("pt-BR") : "");
 
@@ -286,6 +306,10 @@
   }
 
   ["f-account", "f-platform", "f-days"].forEach((id) => $(id).addEventListener("change", load));
+  // Admin troca de cliente: zera a conta selecionada e força repopular as contas.
+  $("f-client").addEventListener("change", () => {
+    $("f-account").value = "todas"; accountsSig = null; load();
+  });
   $("f-refresh").addEventListener("click", async () => {
     $("loading").classList.remove("hidden");
     try { await fetch("/api/refresh", { method: "POST" }); } catch (e) { console.error(e); }

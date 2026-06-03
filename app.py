@@ -175,12 +175,32 @@ def api_data():
         days = 30
 
     scope = g.client.get("scope") if hasattr(g, "client") else None
+
+    # Admin (escopo None) pode "ver como" um cliente: ?client=KEY aplica o escopo
+    # daquele cliente, exibindo exatamente o que ele ve. Tambem devolve a lista de
+    # clientes para o seletor no front.
+    clientes_admin = None
+    cliente_sel = ""
+    if scope is None and USERS:
+        clientes_admin = sorted(
+            ({"key": k, "nome": v.get("nome", k)}
+             for k, v in USERS.items() if v.get("scope") is not None),
+            key=lambda c: c["nome"].lower())
+        cliente_sel = request.args.get("client", "")
+        chosen = USERS.get(cliente_sel)
+        if chosen and chosen.get("scope") is not None:
+            scope = chosen["scope"]
+        else:
+            cliente_sel = ""
+
     payload = analytics.build_payload(
         store, account=account, platform=platform, days=days, scope=scope)
     # Distingue "carregando" (cache ainda vazio logo apos reiniciar) de "sem dados".
     if payload.get("vazio") and store.updated_at is None:
         payload["carregando"] = True
     payload["comentarios"] = commentary.generate(payload)
+    payload["clientes_admin"] = clientes_admin
+    payload["cliente_sel"] = cliente_sel
     payload["meta_info"] = {
         "atualizado_em": store.updated_at.isoformat() if store.updated_at else None,
         "fonte": store.source_label,

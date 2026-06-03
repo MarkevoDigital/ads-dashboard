@@ -1,4 +1,4 @@
-"""Reproduz o build_payload com dados REAIS de 1 conta (rapido) p/ ver o traceback."""
+"""Diagnostica o bloco de objetivo (ex.: Geração de leads) com dados REAIS de 1 cliente."""
 import os
 import sys
 import traceback
@@ -19,31 +19,34 @@ if os.path.exists(bundle):
 import pandas as pd  # noqa: E402
 import data_sources as d  # noqa: E402
 import analytics  # noqa: E402
-import commentary  # noqa: E402
+import metrics as M  # noqa: E402
 from connectors import meta_api, google_api  # noqa: E402
 
-cfg = d.load_config()
-mc = dict(cfg["api"]["meta"]); mc["ad_account_ids"] = ["457463684925385"]   # dr-carlos Meta
-gc = dict(cfg["api"]["google_ads"]); gc["customer_ids"] = ["9152404582"]    # dr-carlos Google
+# NEP Objetivo
+MID, GID = "1427648885223339", "2121479176"
+mc = dict(d.load_config()["api"]["meta"]); mc["ad_account_ids"] = [MID]
+gc = dict(d.load_config()["api"]["google_ads"]); gc["customer_ids"] = [GID]
 
-store = d.DataStore(cfg)
+store = d.DataStore(d.load_config())
 store.meta = d._coerce(meta_api.fetch(mc, 60), d.META_COLUMNS, d.NUMERIC_META)
 store.google = d._coerce(google_api.fetch(gc, 60), d.GOOGLE_COLUMNS, d.NUMERIC_GOOGLE)
 store.geo = d._coerce_geo(pd.DataFrame(columns=d.GEO_COLUMNS))
 print("meta linhas:", len(store.meta), "| google linhas:", len(store.google))
-if len(store.meta):
-    print("meta datas:", store.meta["date"].min(), "->", store.meta["date"].max())
-    print("meta objetivos:", list(store.meta["objective"].unique()))
 
-scope = {"meta_ids": {"457463684925385"}, "google_ids": {"9152404582"}}
+scope = {"meta_ids": {MID}, "google_ids": {GID}}
 try:
     p = analytics.build_payload(store, days=30, scope=scope)
-    print("BUILD OK | vazio:", p.get("vazio"))
-    print("best_ads:", len(p.get("melhores_anuncios", [])),
-          "| campanhas:", len(p.get("campanhas", [])))
-    # commentary.generate roda no /api/data — precisa ser testado tambem
-    c = commentary.generate(p)
-    print("COMMENTARY OK | destaques:", len(c.get("destaques", [])))
+    for b in p.get("blocos_objetivo", []):
+        print(f"\n=== BLOCO: {b['objective']} ({b['label']}) spend={b['spend']} ===")
+        for c in b["cards"]:
+            print(f"   card {c['key']:14} = {c['value']}")
+    # foco no objetivo leads
+    g = store.google
+    gl = g[g["objective"] == "leads"]
+    ml = store.meta[store.meta["objective"] == "leads"]
+    print("\n--- leads obj: google conv =", float(gl["conversions"].sum()),
+          "| meta leads =", float(ml["leads"].sum()) if len(ml) else 0)
+    print("sums leads-obj:", {k: round(v, 1) for k, v in M.sums(ml, gl).items()
+                              if k in ("leads", "conversions", "site_visits", "video_views", "engagement")})
 except Exception:
-    print("=== TRACEBACK build_payload ===")
     traceback.print_exc()

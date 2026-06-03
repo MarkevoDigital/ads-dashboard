@@ -453,10 +453,14 @@ class DataStore:
                 geo_frames.append(google_api.fetch_geo(api.get("google_ads", {}), dias))
             except Exception as exc:  # noqa: BLE001
                 print(f"[geo] google falhou: {exc}")
-            try:
-                geo_frames.append(google_api.fetch_geo_city(api.get("google_ads", {}), dias))
-            except Exception as exc:  # noqa: BLE001
-                print(f"[geo-cidade] google falhou: {exc}")
+            # Geo por CIDADE (user_location_view) so qun GEO_CIDADE_ON=1: a consulta e
+            # pesada/lenta e estava travando o refresh sincrono. Mantido opcional ate
+            # migrar para carga assincrona/cacheada.
+            if os.environ.get("GEO_CIDADE_ON") == "1":
+                try:
+                    geo_frames.append(google_api.fetch_geo_city(api.get("google_ads", {}), dias))
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[geo-cidade] google falhou: {exc}")
             geo_frames = [g for g in geo_frames if g is not None and len(g)]
             geo_df = pd.concat(geo_frames, ignore_index=True) if geo_frames else empty_geo
             return meta_df, google_df, geo_df, "API (Meta + Google Ads)"

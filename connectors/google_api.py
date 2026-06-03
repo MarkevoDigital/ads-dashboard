@@ -297,10 +297,14 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     # user_location_view = cidade REAL do usuario (geographic_view quase nao popula cidade).
     # AGREGA o periodo (sem segments.date) -> 1 linha por cidade/conta (rapido); seria
     # inviavel por dia (cidades x dias x contas = dezenas de milhares de linhas).
+    # ORDER BY + LIMIT: so as cidades com mais cliques (o que importa p/ mapa/ranking).
+    # Limita o volume por conta -> refresh rapido e estavel (sem isso, milhares de linhas).
     geo_query = f"""
         SELECT segments.geo_target_city, metrics.clicks
         FROM user_location_view
         WHERE segments.date BETWEEN '{since}' AND '{until}'
+        ORDER BY metrics.clicks DESC
+        LIMIT 40
     """
 
     def _rid(rn):

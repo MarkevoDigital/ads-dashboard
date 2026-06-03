@@ -109,8 +109,21 @@ OBJECTIVE_CONFIG = {
 }
 
 
+# Metricas que devem aparecer em QUALQUER objetivo quando tiverem historico (>0):
+# visualizacoes de video, visitas ao Instagram e engajamento. A regra de ocultacao
+# (active_keys) garante que so aparecem se nao forem zeradas no escopo do cliente.
+_EXTRA_KPIS = ["video_views", "profile_visits", "engagement"]
+
+
 def objective_config(obj: str) -> dict:
-    return OBJECTIVE_CONFIG.get(obj, OBJECTIVE_CONFIG["outros"])
+    base = OBJECTIVE_CONFIG.get(obj, OBJECTIVE_CONFIG["outros"])
+    cfg = dict(base)
+    kpis = list(cfg["kpis"])
+    for k in _EXTRA_KPIS:
+        if k not in kpis:
+            kpis.append(k)
+    cfg["kpis"] = kpis
+    return cfg
 
 
 # ----------------------------------------------------------------------------

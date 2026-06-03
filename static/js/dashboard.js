@@ -145,8 +145,8 @@
         <div class="ad-body">
           <div class="ad-name">${a.ad_name}</div>
           <div class="ad-tag">${a.account} · ${a.objective_label}</div>
-          <div class="ad-metric">${fmt(a.metric_value, a.metric_fmt)}<small>${a.metric_label}</small></div>
-          <div class="ad-sub">Invest.: ${fmt(a.spend, "currency")} · CTR ${fmt(a.ctr, "pct")} · ${fmt(a.impressions, "int")} impr.</div>
+          <div class="ad-metric">${fmt(a.result_value, a.result_fmt)}<small>${a.result_label}</small></div>
+          <div class="ad-sub">${a.eff_label}: ${fmt(a.eff_value, a.eff_fmt)} · Invest.: ${fmt(a.spend, "currency")} · CTR ${fmt(a.ctr, "pct")} · ${fmt(a.impressions, "int")} impr.</div>
         </div></div>`).join("");
   }
 
@@ -154,14 +154,25 @@
   function renderCampaigns(rows) {
     const wrap = $("campaigns-wrap");
     if (!rows || !rows.length) { wrap.innerHTML = `<div class="empty">Sem campanhas no periodo.</div>`; return; }
-    const body = rows.map((r) => `<tr>
-      <td><span class="plat ${r.plataforma.toLowerCase()}">${r.plataforma}</span></td>
-      <td>${r.campanha}</td><td>${r.objetivo}</td>
-      <td>${fmt(r.spend, "currency")}</td><td>${fmt(r.impressions, "int")}</td>
-      <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.ctr, "pct")}</td>
-      <td>${fmt(r.conversions, "int")}</td><td>${fmt(r.cpa, "currency")}</td></tr>`).join("");
+    // Colunas extras (views de video, visitas ao Instagram, engajamento) so aparecem
+    // se houver valor > 0 em alguma campanha — respeita a regra de ocultar zerados.
+    const extra = [
+      { key: "video_views", label: "Views vídeo", fmt: "int" },
+      { key: "profile_visits", label: "Visitas IG", fmt: "int" },
+      { key: "engagement", label: "Engaj.", fmt: "int" },
+    ].filter((c) => rows.some((r) => (r[c.key] || 0) > 0));
+    const extraHead = extra.map((c) => `<th>${c.label}</th>`).join("");
+    const body = rows.map((r) => {
+      const extraCells = extra.map((c) => `<td>${fmt(r[c.key], c.fmt)}</td>`).join("");
+      return `<tr>
+        <td><span class="plat ${r.plataforma.toLowerCase()}">${r.plataforma}</span></td>
+        <td>${r.campanha}</td><td>${r.objetivo}</td>
+        <td>${fmt(r.spend, "currency")}</td><td>${fmt(r.impressions, "int")}</td>
+        <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.ctr, "pct")}</td>
+        <td>${fmt(r.conversions, "int")}</td><td>${fmt(r.cpa, "currency")}</td>${extraCells}</tr>`;
+    }).join("");
     wrap.innerHTML = `<table><thead><tr><th>Plataforma</th><th>Campanha</th><th>Objetivo</th>
-      <th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th></tr></thead>
+      <th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
       <tbody>${body}</tbody></table>`;
   }
 

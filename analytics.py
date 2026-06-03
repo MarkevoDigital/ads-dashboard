@@ -158,23 +158,29 @@ def _best_ads(meta_cur, limit=6) -> list[dict]:
         links = [l for l in g["ad_permalink"].astype(str) if l and l.lower() != "nan"]
         link = links[0] if links else ""
         cfg = M.objective_config(obj)
-        metric_key = cfg["best_ad_metric"]
-        spec = M.KPI_CATALOG[metric_key]
-        score = M.kpi_value(g, empty, metric_key)
+        # HEROI = numero de resultados do objetivo (conversoes/leads/conversas/views/...)
+        result_key = cfg["conv_key"]
+        result_spec = M.KPI_CATALOG[result_key]
+        result_value = M.kpi_value(g, empty, result_key)
+        # SECUNDARIA = eficiencia por resultado (custo por resultado / ROAS do objetivo)
+        eff_key = cfg["best_ad_metric"]
+        eff_spec = M.KPI_CATALOG[eff_key]
+        eff_value = M.kpi_value(g, empty, eff_key)
         rows.append({
             "ad_name": ad, "account": acc, "objective": obj,
             "objective_label": cfg["label"], "thumbnail": thumb, "permalink": link,
-            "metric_key": metric_key, "metric_label": spec["label"],
-            "metric_fmt": spec["fmt"], "metric_value": round(score, 4),
-            "metric_dir": spec["dir"], "spend": round(g["spend"].sum(), 2),
+            # metrica em destaque = numero de resultados
+            "result_key": result_key, "result_label": result_spec["label"],
+            "result_fmt": result_spec["fmt"], "result_value": round(result_value, 4),
+            # metrica de eficiencia (secundaria)
+            "eff_key": eff_key, "eff_label": eff_spec["label"],
+            "eff_fmt": eff_spec["fmt"], "eff_value": round(eff_value, 4),
+            "spend": round(g["spend"].sum(), 2),
             "impressions": int(g["impressions"].sum()),
             "ctr": round(M.kpi_value(g, empty, "ctr"), 4),
         })
-    for r in rows:
-        r["_sort"] = r["metric_value"] if r["metric_dir"] == "up" else -r["metric_value"]
-    rows.sort(key=lambda r: r["_sort"], reverse=True)
-    for r in rows:
-        r.pop("_sort", None)
+    # ordena pelo numero de resultados (mais resultados = melhor anuncio)
+    rows.sort(key=lambda r: r["result_value"], reverse=True)
     return rows[:limit]
 
 
@@ -235,8 +241,14 @@ def _campaigns(meta_cur, google_cur) -> list[dict]:
             if is_meta:
                 col = _META_CONV_COL.get(cfg.get("conv_key"))
                 conv = float(g[col].sum()) if col and col in g.columns else 0.0
+                video = float(g["video_views"].sum()) if "video_views" in g.columns else 0.0
+                ig_visits = float(g["profile_visits"].sum()) if "profile_visits" in g.columns else 0.0
+                eng = float(g["engagement"].sum()) if "engagement" in g.columns else 0.0
             else:
                 conv = float(g["conversions"].sum())
+                video = float(g["video_views"].sum()) if "video_views" in g.columns else 0.0
+                ig_visits = 0.0  # Google nao tem visitas ao Instagram
+                eng = 0.0        # Google nao tem engajamento (tem interacoes)
             rows.append({
                 "plataforma": plat, "campanha": str(camp),
                 "objetivo": cfg["label"], "spend": round(spend, 2),
@@ -244,6 +256,8 @@ def _campaigns(meta_cur, google_cur) -> list[dict]:
                 "ctr": round(clk / impr, 4) if impr else 0.0,
                 "conversions": round(conv, 1),
                 "cpa": round(spend / conv, 2) if conv else 0.0,
+                "video_views": int(video), "profile_visits": int(ig_visits),
+                "engagement": int(eng),
             })
     rows.sort(key=lambda r: r["spend"], reverse=True)
     return rows
@@ -292,7 +306,8 @@ def _platform_comparison(meta_cur, google_cur) -> dict:
 
 
 def _period_comparison(meta_cur, google_cur, meta_prev, google_prev, history) -> list[dict]:
-    keys = ["spend", "impressions", "clicks", "ctr", "cpc", "conversions", "revenue", "cpa"]
+    keys = ["spend", "impressions", "clicks", "ctr", "cpc", "conversions",
+            "video_views", "profile_visits", "engagement", "revenue", "cpa"]
     out = []
     for key in keys:
         if M.KPI_CATALOG[key]["base"] not in ("spend", "impressions", "clicks") \

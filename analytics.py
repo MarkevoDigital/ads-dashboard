@@ -69,41 +69,52 @@ def _funnel(meta_cur, google_cur) -> dict:
 # ----------------------------------------------------------------------------
 # Blocos por objetivo (KPIs adaptativos, ocultando zerados sem historico)
 # ----------------------------------------------------------------------------
-def _objective_blocks(meta_cur, google_cur, meta_prev, google_prev,
-                      meta_all, google_all) -> list[dict]:
+def _is_zero(value, fmt) -> bool:
+    """True se o valor exibido seria zero (respeita o arredondamento de cada formato)."""
+    if fmt == "int":
+        return round(value) == 0
+    if fmt == "pct":
+        return round(value * 100, 2) == 0
+    return round(value, 2) == 0  # currency, ratio, dec
+
+
+def _objective_blocks(meta_cur, google_cur, meta_prev, google_prev) -> list[dict]:
     objs = sorted(set(meta_cur["objective"]).union(set(google_cur["objective"])))
     blocks = []
     for obj in objs:
         cfg = M.objective_config(obj)
+        conv_key = cfg.get("conv_key")
         mc = meta_cur[meta_cur["objective"] == obj]
         gc = google_cur[google_cur["objective"] == obj]
         mp = meta_prev[meta_prev["objective"] == obj]
         gp = google_prev[google_prev["objective"] == obj]
-        ma = meta_all[meta_all["objective"] == obj]
-        ga = google_all[google_all["objective"] == obj]
         if mc.empty and gc.empty:
             continue
-        # historico do objetivo -> define quais cards aparecem
-        hist = M.sums(ma, ga)
-        keys = M.active_keys(hist, cfg["kpis"])
-        if not keys:
+        spend = round(M.kpi_value(mc, gc, "spend"), 2)
+        if spend <= 0:
             continue
-        cur = M.compute_kpis(mc, gc, keys)
-        prev = M.compute_kpis(mp, gp, keys)
+        # conv_key faz o Google contar no bucket do objetivo (ex.: leads = leads Meta +
+        # conversoes Google) — corrige "leads zerados" em contas so-Google.
+        cur = M.compute_kpis(mc, gc, cfg["kpis"], conv_key)
+        prev = M.compute_kpis(mp, gp, cfg["kpis"], conv_key)
         cards = []
-        for key in keys:
-            c, p = cur[key], prev[key]
+        for key in cfg["kpis"]:
+            c = cur[key]
+            # OCULTAR zerados: investimento sempre aparece; os demais so com valor no periodo.
+            if key != "spend" and _is_zero(c["value"], c["fmt"]):
+                continue
+            p = prev[key]
             delta = M.pct_change(c["value"], p["value"])
             cards.append({
                 **c, "prev_value": p["value"], "delta_pct": delta,
                 "good": M.is_good(c["dir"], delta),
                 "is_primary": key == cfg["primary"],
             })
+        if not cards:
+            continue
         blocks.append({
             "objective": obj, "label": cfg["label"], "icone": cfg["icone"],
-            "primary": cfg["primary"],
-            "spend": round(M.kpi_value(mc, gc, "spend"), 2),
-            "cards": cards,
+            "primary": cfg["primary"], "spend": spend, "cards": cards,
         })
     blocks.sort(key=lambda b: b["spend"], reverse=True)
     return blocks
@@ -266,24 +277,29 @@ def _campaigns(meta_cur, google_cur) -> list[dict]:
 # ----------------------------------------------------------------------------
 # Geo (mapa de calor)
 # ----------------------------------------------------------------------------
-def _geo(geo_df, scope, start, end) -> dict:
+def _geo(geo_df, scope, start, end, level="estado") -> dict:
+    empty = {"points": [], "max": 0, "cidades": []}
     if geo_df is None or geo_df.empty:
-        return {"points": [], "max": 0, "cidades": []}
+        return empty
     df = geo_df
+    if "level" in df.columns:
+        df = df[df["level"] == level]
     if scope is not None:
         allowed = (scope.get("meta_ids") or set()) | (scope.get("google_ids") or set())
         df = df[df["account_id"].astype(str).map(_digits).isin(allowed)]
     df = _window(df, start, end)
     if df is None or df.empty:
-        return {"points": [], "max": 0, "cidades": []}
+        return empty
     agg = df.groupby(["city", "lat", "lng"], dropna=False)["clicks"].sum().reset_index()
-    agg = agg[(agg["clicks"] > 0) & (agg["lat"] != 0)]
+    agg = agg[agg["clicks"] > 0]
     if agg.empty:
-        return {"points": [], "max": 0, "cidades": []}
-    mx = float(agg["clicks"].max())
-    points = [[float(r["lat"]), float(r["lng"]), float(r["clicks"])] for _, r in agg.iterrows()]
-    cidades = [{"city": r["city"], "clicks": int(r["clicks"])}
-               for _, r in agg.sort_values("clicks", ascending=False).head(10).iterrows()]
+        return empty
+    # ranking (lista) inclui TODAS as localidades; o mapa so plota as que tem coordenada.
+    rank = agg.groupby("city")["clicks"].sum().reset_index().sort_values("clicks", ascending=False)
+    cidades = [{"city": r["city"], "clicks": int(r["clicks"])} for _, r in rank.head(12).iterrows()]
+    pts = agg[agg["lat"] != 0]
+    mx = float(pts["clicks"].max()) if len(pts) else 0
+    points = [[float(r["lat"]), float(r["lng"]), float(r["clicks"])] for _, r in pts.iterrows()]
     return {"points": points, "max": mx, "cidades": cidades}
 
 
@@ -328,7 +344,8 @@ def _period_comparison(meta_cur, google_cur, meta_prev, google_prev, history) ->
 # ----------------------------------------------------------------------------
 # Orquestrador
 # ----------------------------------------------------------------------------
-def build_payload(store, account="todas", platform="todas", days=30, scope=None) -> dict:
+def build_payload(store, account="todas", platform="todas", days=30, scope=None,
+                  start=None, end=None) -> dict:
     meta, google = store.meta.copy(), store.google.copy()
 
     if scope is not None:
@@ -352,10 +369,24 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None)
     if not all_dates:
         return {"vazio": True, "filtros": {"account": account, "platform": platform, "days": days}}
 
-    end = max(all_dates)
-    start = end - pd.Timedelta(days=days - 1)
+    # Janela: intervalo explicito (mes/personalizado) tem prioridade sobre "ultimos N dias".
+    rng = None
+    if start and end:
+        try:
+            rng_start, rng_end = pd.Timestamp(start), pd.Timestamp(end)
+            if rng_end >= rng_start:
+                rng = (rng_start, rng_end)
+        except (ValueError, TypeError):
+            rng = None
+    if rng:
+        start, end = rng
+        win = (end - start).days + 1
+    else:
+        end = max(all_dates)
+        start = end - pd.Timedelta(days=days - 1)
+        win = days
     prev_end = start - pd.Timedelta(days=1)
-    prev_start = prev_end - pd.Timedelta(days=days - 1)
+    prev_start = prev_end - pd.Timedelta(days=win - 1)
 
     meta_cur, google_cur = _window(meta, start, end), _window(google, start, end)
     meta_prev, google_prev = _window(meta, prev_start, prev_end), _window(google, prev_start, prev_end)
@@ -368,7 +399,7 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None)
         meta_all = meta_all.iloc[0:0]
 
     history = M.sums(meta_all, google_all)
-    blocks = _objective_blocks(meta_cur, google_cur, meta_prev, google_prev, meta_all, google_all)
+    blocks = _objective_blocks(meta_cur, google_cur, meta_prev, google_prev)
 
     return {
         "vazio": False,
@@ -384,7 +415,8 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None)
         "melhores_anuncios": _best_ads(meta_cur),
         "palavras_chave": _keywords(google_cur),
         "campanhas": _campaigns(meta_cur, google_cur),
-        "geo": _geo(store.geo, scope, start, end),
+        "geo": _geo(store.geo, scope, start, end, "estado"),
+        "geo_cidades": _geo(store.geo, scope, start, end, "cidade"),
         "comparativo_plataforma": _platform_comparison(meta_cur, google_cur),
         "comparativo_periodo": _period_comparison(meta_cur, google_cur, meta_prev, google_prev, history),
     }

@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 
-from connectors.meta_api import BR_STATE_COORDS
+from connectors.meta_api import BR_STATE_COORDS, _CITY_BY_NORM
 
 
 def _norm(s: str) -> str:
@@ -275,5 +275,73 @@ def fetch_geo(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                 continue
             state, lat, lng = match
             rows.append({"date": date, "account_id": cid, "platform": "google",
-                         "city": state, "lat": lat, "lng": lng, "clicks": clk})
+                         "level": "estado", "city": state, "lat": lat, "lng": lng, "clicks": clk})
+    return pd.DataFrame(rows)
+
+
+def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
+    """Cliques por CIDADE no Google Ads (segments.geo_target_city).
+
+    A API nao traz coordenadas: resolvemos o id -> nome via geo_target_constant e, p/ o
+    mapa, casamos com BR_CITY_COORDS (principais cidades). Cidades sem coordenada entram
+    com lat/lng=0 -> aparecem no ranking (lista), nao no mapa.
+    """
+    if not g_cfg.get("developer_token") or not g_cfg.get("refresh_token"):
+        return pd.DataFrame()
+    from google.ads.googleads.errors import GoogleAdsException
+
+    client = _client(g_cfg)
+    service = client.get_service("GoogleAdsService")
+    since, until = _date_range(days)
+    rows = []
+    geo_query = f"""
+        SELECT segments.geo_target_city, segments.date,
+               geographic_view.location_type, metrics.clicks
+        FROM geographic_view
+        WHERE segments.date BETWEEN '{since}' AND '{until}'
+    """
+
+    def _rid(rn):
+        return str(rn).rsplit("/", 1)[-1] if rn else ""
+
+    for cid in _customer_ids(g_cfg, client):
+        raw, city_ids = [], set()
+        try:
+            for batch in service.search_stream(customer_id=cid, query=geo_query):
+                for row in batch.results:
+                    if row.geographic_view.location_type.name != "LOCATION_OF_PRESENCE":
+                        continue
+                    rid = _rid(row.segments.geo_target_city)
+                    if not rid:
+                        continue
+                    city_ids.add(rid)
+                    raw.append((str(row.segments.date), rid, float(row.metrics.clicks)))
+        except GoogleAdsException as exc:
+            print(f"[google-cidade] {cid}: {exc}")
+            continue
+        if not raw:
+            continue
+        names = {}
+        try:
+            in_clause = ",".join(sorted(city_ids))
+            gtc_query = (
+                "SELECT geo_target_constant.id, geo_target_constant.name "
+                "FROM geo_target_constant "
+                f"WHERE geo_target_constant.id IN ({in_clause})"
+            )
+            for batch in service.search_stream(customer_id=cid, query=gtc_query):
+                for row in batch.results:
+                    names[str(row.geo_target_constant.id)] = row.geo_target_constant.name
+        except GoogleAdsException as exc:
+            print(f"[google-cidade] resolve {cid}: {exc}")
+        for date, rid, clk in raw:
+            cidade = names.get(rid, "")
+            if not cidade:
+                continue
+            coord = _CITY_BY_NORM.get(_norm(cidade))
+            name = coord[0] if coord else cidade
+            lat = coord[1] if coord else 0.0
+            lng = coord[2] if coord else 0.0
+            rows.append({"date": date, "account_id": cid, "platform": "google",
+                         "level": "cidade", "city": name, "lat": lat, "lng": lng, "clicks": clk})
     return pd.DataFrame(rows)

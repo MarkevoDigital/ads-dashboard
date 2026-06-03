@@ -132,6 +132,19 @@ tbody tr:hover { background: var(--panel-2); }
   background: rgba(8,11,18,.6); font-size: 16px; z-index: 50;
 }
 .hidden { display: none !important; }
+/* Período personalizado (campos de data) */
+.filters .range { display: inline-flex; gap: 4px; }
+.filters .range input[type=date] {
+  background: var(--panel-2); color: var(--txt); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 8px; font-size: 13px;
+}
+/* Toggle Estados/Cidades do mapa */
+.geo-toggle { display: flex; gap: 6px; margin: 0 0 10px; }
+.geo-tab {
+  background: var(--panel-2); color: var(--muted); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer;
+}
+.geo-tab.active { background: var(--brand); color: #fff; border-color: transparent; }
 .foot { text-align: center; color: var(--muted); font-size: 11px; padding: 18px; }
 .empty { color: var(--muted); padding: 18px; text-align: center; }
 

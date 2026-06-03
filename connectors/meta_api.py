@@ -74,13 +74,39 @@ BR_STATE_COORDS = {
 
 
 def _norm_state(s: str) -> str:
-    """Normaliza nome de estado (sem acento, minusculo) para casar na busca."""
+    """Normaliza nome de estado/cidade (sem acento, minusculo) para casar na busca."""
     s = unicodedata.normalize("NFKD", str(s))
     return "".join(c for c in s if not unicodedata.combining(c)).strip().lower()
 
 
 # lookup: nome normalizado -> (nome acentuado p/ exibicao, lat, lng)
 _STATE_BY_NORM = {_norm_state(k): (k, v[0], v[1]) for k, v in BR_STATE_COORDS.items()}
+
+# Coordenadas das principais cidades do Brasil (capitais + grandes municipios), para
+# plotar cliques por cidade no mapa. Cidades fora desta lista ainda aparecem no ranking
+# (lista), apenas sem ponto no mapa.
+BR_CITY_COORDS = {
+    "Rio Branco": (-9.97, -67.81), "Maceió": (-9.67, -35.74), "Macapá": (0.03, -51.07),
+    "Manaus": (-3.12, -60.02), "Salvador": (-12.97, -38.50), "Fortaleza": (-3.73, -38.52),
+    "Brasília": (-15.79, -47.88), "Vitória": (-20.32, -40.34), "Goiânia": (-16.69, -49.26),
+    "São Luís": (-2.53, -44.30), "Cuiabá": (-15.60, -56.10), "Campo Grande": (-20.47, -54.62),
+    "Belo Horizonte": (-19.92, -43.94), "Belém": (-1.46, -48.50), "João Pessoa": (-7.12, -34.86),
+    "Curitiba": (-25.43, -49.27), "Recife": (-8.05, -34.88), "Teresina": (-5.09, -42.80),
+    "Rio de Janeiro": (-22.91, -43.17), "Natal": (-5.79, -35.21), "Porto Alegre": (-30.03, -51.23),
+    "Porto Velho": (-8.76, -63.90), "Boa Vista": (2.82, -60.67), "Florianópolis": (-27.59, -48.55),
+    "São Paulo": (-23.55, -46.63), "Aracaju": (-10.91, -37.07), "Palmas": (-10.18, -48.33),
+    "Várzea Grande": (-15.65, -56.13), "Rondonópolis": (-16.47, -54.64), "Sinop": (-11.86, -55.50),
+    "Campinas": (-22.91, -47.06), "Guarulhos": (-23.45, -46.53), "Santo André": (-23.66, -46.53),
+    "São Bernardo do Campo": (-23.69, -46.56), "Osasco": (-23.53, -46.79), "Santos": (-23.96, -46.33),
+    "Ribeirão Preto": (-21.18, -47.81), "Sorocaba": (-23.50, -47.46), "São José dos Campos": (-23.18, -45.89),
+    "Niterói": (-22.88, -43.10), "Duque de Caxias": (-22.79, -43.31), "Nova Iguaçu": (-22.76, -43.45),
+    "Contagem": (-19.93, -44.05), "Uberlândia": (-18.91, -48.27), "Juiz de Fora": (-21.76, -43.35),
+    "Betim": (-19.97, -44.20), "Londrina": (-23.31, -51.16), "Maringá": (-23.42, -51.94),
+    "Joinville": (-26.30, -48.85), "Blumenau": (-26.92, -49.07), "Caxias do Sul": (-29.17, -51.18),
+    "Feira de Santana": (-12.27, -38.97), "Jaboatão dos Guararapes": (-8.11, -35.01),
+    "Aparecida de Goiânia": (-16.82, -49.24), "Anápolis": (-16.33, -48.95),
+}
+_CITY_BY_NORM = {_norm_state(k): (k, v[0], v[1]) for k, v in BR_CITY_COORDS.items()}
 
 
 def _first_action(actions, keys) -> float:
@@ -256,7 +282,7 @@ def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
                 name, lat, lng = match
                 rows.append({
                     "date": r.get("date_start"), "account_id": account_id.replace("act_", ""),
-                    "platform": "meta", "city": name,
+                    "platform": "meta", "level": "estado", "city": name,
                     "lat": lat, "lng": lng, "clicks": float(r.get("clicks", 0) or 0),
                 })
         except Exception as exc:  # noqa: BLE001

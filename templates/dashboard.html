@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard de Ads — Meta + Google</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=6">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -39,7 +39,14 @@
           <option value="14">Últimos 14 dias</option>
           <option value="30" selected>Últimos 30 dias</option>
           <option value="60">Últimos 60 dias</option>
+          <optgroup label="Por mês" id="f-months"></optgroup>
+          <option value="custom">Personalizado…</option>
         </select>
+      </label>
+      <label id="f-range-wrap" class="hidden">Datas
+        <span class="range">
+          <input type="date" id="f-start"><input type="date" id="f-end">
+        </span>
       </label>
       <button id="f-refresh" title="Recarregar dados da fonte">⟳ Atualizar</button>
     </div>
@@ -69,21 +76,21 @@
       <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
     </section>
 
-    <!-- Blocos por objetivo (cards; metricas zeradas sao ocultadas) -->
-    <section id="objective-blocks"></section>
-
-    <!-- Melhores anuncios -->
-    <section class="card">
-      <h2>🏆 Melhores anúncios</h2>
-      <p class="hint">Criativo destaque por objetivo (com print do anúncio).</p>
-      <div id="best-ads" class="ads-grid"></div>
-    </section>
-
-    <!-- Campanhas por plataforma -->
+    <!-- Campanhas por plataforma (logo abaixo da Evolução diária) -->
     <section class="card">
       <h2>🗂️ Campanhas por plataforma</h2>
       <p class="hint">Campanhas com veiculação no período filtrado.</p>
       <div id="campaigns-wrap" class="table-wrap"></div>
+    </section>
+
+    <!-- Blocos por objetivo (cards; metricas zeradas sao ocultadas) -->
+    <section id="objective-blocks"></section>
+
+    <!-- Melhores anuncios do Meta Ads -->
+    <section class="card" id="best-ads-section">
+      <h2>🏆 Melhores anúncios do Meta Ads</h2>
+      <p class="hint">Criativo destaque por objetivo (com print do anúncio).</p>
+      <div id="best-ads" class="ads-grid"></div>
     </section>
 
     <div class="two-col">
@@ -107,6 +114,10 @@
     <!-- Mapa de calor geografico -->
     <section class="card" id="geo-section">
       <h2>📍 Mapa de calor — cliques por localização</h2>
+      <div class="geo-toggle" id="geo-toggle">
+        <button type="button" class="geo-tab active" data-level="estado">Estados</button>
+        <button type="button" class="geo-tab" data-level="cidade">Cidades</button>
+      </div>
       <div id="geo-map" class="geo-map"></div>
       <div id="geo-top" class="geo-top"></div>
     </section>
@@ -115,6 +126,6 @@
   <div id="loading" class="loading hidden">Carregando…</div>
   <footer class="foot">Atualização automática diária · Meta Ads + Google Ads</footer>
 
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=5"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=6"></script>
 </body>
 </html>

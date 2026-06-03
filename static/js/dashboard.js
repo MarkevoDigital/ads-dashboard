@@ -4,7 +4,10 @@
 
   const $ = (id) => document.getElementById(id);
   let trendChart = null, platformChart = null, clientLoaded = false, accountsSig = null;
-  let geoMap = null, heatLayer = null;
+  let geoMap = null, heatLayer = null, monthsLoaded = false;
+  let geoData = { estado: null, cidade: null }, geoLevel = "estado";
+  const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
   const nf = new Intl.NumberFormat("pt-BR");
   const cf = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -32,9 +35,23 @@
   async function load() {
     $("loading").classList.remove("hidden");
     const params = new URLSearchParams({
-      account: $("f-account").value, platform: $("f-platform").value, days: $("f-days").value,
+      account: $("f-account").value, platform: $("f-platform").value,
       client: $("f-client") ? $("f-client").value : "",
     });
+    const pv = $("f-days").value;
+    if (pv === "custom") {
+      const s = $("f-start").value, e = $("f-end").value;
+      if (!s || !e) { $("loading").classList.add("hidden"); return; }  // espera as 2 datas
+      params.set("start", s); params.set("end", e);
+    } else if (pv.startsWith("m:")) {
+      const [y, m] = pv.slice(2).split("-").map(Number);
+      const last = new Date(y, m, 0).getDate();
+      const mm = String(m).padStart(2, "0");
+      params.set("start", `${y}-${mm}-01`);
+      params.set("end", `${y}-${mm}-${String(last).padStart(2, "0")}`);
+    } else {
+      params.set("days", pv);
+    }
     try {
       const res = await fetch("/api/data?" + params.toString());
       render(await res.json());
@@ -96,18 +113,51 @@
 
     const p = data.periodo;
     $("period-info").textContent =
-      `Periodo: ${p.inicio} a ${p.fim} (anterior: ${p.anterior_inicio} a ${p.anterior_fim})`;
+      `Período: ${p.inicio} a ${p.fim} (anterior: ${p.anterior_inicio} a ${p.anterior_fim})`;
+
+    populateMonths(p.fim);
 
     renderFunnel(data.funil);
     renderComments(data.comentarios);
     renderObjectiveBlocks(data.blocos_objetivo);
     renderTrend(data.serie_temporal);
     renderBestAds(data.melhores_anuncios);
+    // Melhores anúncios são do Meta Ads -> ocultar quando o filtro é "Somente Google".
+    $("best-ads-section").classList.toggle("hidden", (data.filtros || {}).platform === "google");
     renderCampaigns(data.campanhas);
     renderKeywords(data.palavras_chave);
     renderPlatform(data.comparativo_plataforma);
     renderPeriod(data.comparativo_periodo);
-    renderGeo(data.geo);
+    // Geo: guarda os dois níveis; o toggle "Cidades" só aparece se houver dados de cidade.
+    geoData.estado = data.geo; geoData.cidade = data.geo_cidades;
+    const temCidade = data.geo_cidades && (data.geo_cidades.cidades || []).length;
+    $("geo-toggle").classList.toggle("hidden", !temCidade);
+    if (!temCidade && geoLevel === "cidade") { geoLevel = "estado"; setGeoTab("estado"); }
+    renderGeoLevel();
+  }
+
+  // ---- Seletor de meses (gera os últimos 6 meses a partir da data final dos dados) ----
+  function populateMonths(fim) {
+    if (monthsLoaded || !fim) return;
+    const og = $("f-months"); if (!og) return;
+    const [y, m] = fim.split("-").map(Number);
+    let yy = y, mm = m;
+    for (let i = 0; i < 6; i++) {
+      const o = document.createElement("option");
+      o.value = `m:${yy}-${String(mm).padStart(2, "0")}`;
+      o.textContent = `${MESES[mm - 1]} de ${yy}`;
+      og.appendChild(o);
+      mm--; if (mm < 1) { mm = 12; yy--; }
+    }
+    monthsLoaded = true;
+  }
+
+  function setGeoTab(level) {
+    document.querySelectorAll("#geo-toggle .geo-tab").forEach(
+      (b) => b.classList.toggle("active", b.dataset.level === level));
+  }
+  function renderGeoLevel() {
+    renderGeo(geoData[geoLevel] || { points: [], max: 0, cidades: [] });
   }
 
   // ---- Funil ----
@@ -277,20 +327,29 @@
   // ---- Mapa de calor geografico ----
   function renderGeo(geo) {
     const sec = $("geo-section");
-    if (!geo || !geo.points || !geo.points.length) { sec.classList.add("hidden"); return; }
+    const pts = (geo && geo.points) || [];
+    const cidades = (geo && geo.cidades) || [];
+    if (!pts.length && !cidades.length) { sec.classList.add("hidden"); return; }
     sec.classList.remove("hidden");
-    if (!geoMap) {
-      geoMap = L.map("geo-map", { scrollWheelZoom: false }).setView([-15.6, -47.8], 4);
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-        { maxZoom: 18, attribution: "© OpenStreetMap · © CARTO" }).addTo(geoMap);
+    const mapEl = $("geo-map");
+    if (pts.length) {
+      mapEl.style.display = "";
+      if (!geoMap) {
+        geoMap = L.map("geo-map", { scrollWheelZoom: false }).setView([-15.6, -47.8], 4);
+        L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+          { maxZoom: 18, attribution: "© OpenStreetMap · © CARTO" }).addTo(geoMap);
+      }
+      if (heatLayer) geoMap.removeLayer(heatLayer);
+      const mx = geo.max || 1;
+      const hp = pts.map((p) => [p[0], p[1], Math.max(p[2] / mx, 0.15)]);
+      heatLayer = L.heatLayer(hp, { radius: 32, blur: 22, maxZoom: 10 }).addTo(geoMap);
+      try { geoMap.fitBounds(L.latLngBounds(pts.map((p) => [p[0], p[1]])).pad(0.3)); } catch (e) {}
+      setTimeout(() => geoMap.invalidateSize(), 250);
+    } else if (geoMap) {
+      // sem coordenadas (ex.: cidades pequenas) -> esconde o mapa, mostra só o ranking
+      mapEl.style.display = "none";
     }
-    if (heatLayer) geoMap.removeLayer(heatLayer);
-    const mx = geo.max || 1;
-    const pts = geo.points.map((p) => [p[0], p[1], Math.max(p[2] / mx, 0.15)]);
-    heatLayer = L.heatLayer(pts, { radius: 32, blur: 22, maxZoom: 10 }).addTo(geoMap);
-    try { geoMap.fitBounds(L.latLngBounds(geo.points.map((p) => [p[0], p[1]])).pad(0.3)); } catch (e) {}
-    setTimeout(() => geoMap.invalidateSize(), 250);
-    $("geo-top").innerHTML = (geo.cidades || []).map((c) =>
+    $("geo-top").innerHTML = cidades.map((c) =>
       `<span class="geo-chip">${c.city}: <b>${fmt(c.clicks, "int")}</b></span>`).join("");
   }
 
@@ -305,7 +364,21 @@
     };
   }
 
-  ["f-account", "f-platform", "f-days"].forEach((id) => $(id).addEventListener("change", load));
+  ["f-account", "f-platform"].forEach((id) => $(id).addEventListener("change", load));
+  // Período: "Personalizado" revela os campos de data; meses/dias carregam direto.
+  $("f-days").addEventListener("change", () => {
+    const custom = $("f-days").value === "custom";
+    $("f-range-wrap").classList.toggle("hidden", !custom);
+    if (!custom) load();
+    else if ($("f-start").value && $("f-end").value) load();
+  });
+  $("f-start").addEventListener("change", () => { if ($("f-end").value) load(); });
+  $("f-end").addEventListener("change", () => { if ($("f-start").value) load(); });
+  // Mapa: alterna entre Estados e Cidades (sem recarregar — os dois vêm no payload).
+  document.querySelectorAll("#geo-toggle .geo-tab").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      geoLevel = btn.dataset.level; setGeoTab(geoLevel); renderGeoLevel();
+    }));
   // Admin troca de cliente: zera a conta selecionada e força repopular as contas.
   $("f-client").addEventListener("change", () => {
     $("f-account").value = "todas"; accountsSig = null; load();

@@ -166,8 +166,23 @@ def sums(meta, google) -> dict:
     return _sums(meta, google)
 
 
-def compute_kpis(meta, google, kpi_keys) -> dict:
+def sums_for(meta, google, conv_key=None) -> dict:
+    """Somas ajustadas ao objetivo do bloco.
+
+    O Google reporta todos os desfechos em 'conversions'. Em blocos cujo resultado e
+    uma conversao especifica (leads, conversas), essas conversoes do Google SAO o
+    resultado do objetivo -> contabiliza no bucket certo (ex.: leads = leads do Meta +
+    conversoes do Google). Para 'conversions' (vendas) ja esta incluso em _sums.
+    """
     s = _sums(meta, google)
+    if conv_key in ("leads", "messaging"):
+        s = dict(s)
+        s[conv_key] = s[conv_key] + _col(google, "conversions")
+    return s
+
+
+def compute_kpis(meta, google, kpi_keys, conv_key=None) -> dict:
+    s = sums_for(meta, google, conv_key)
     out = {}
     for key in kpi_keys:
         spec = KPI_CATALOG[key]

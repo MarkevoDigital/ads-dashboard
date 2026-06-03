@@ -39,7 +39,7 @@ GOOGLE_COLUMNS = [
     "conversions", "conversion_value", "video_views", "interactions",
 ]
 GEO_COLUMNS = [
-    "date", "account_id", "platform", "city", "lat", "lng", "clicks",
+    "date", "account_id", "platform", "level", "city", "lat", "lng", "clicks",
 ]
 
 NUMERIC_META = [
@@ -375,6 +375,8 @@ def _coerce_geo(df: pd.DataFrame) -> pd.DataFrame:
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     for col in NUMERIC_GEO:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+    # 'level' default = estado (dados antigos/exemplo nao tinham essa coluna)
+    df["level"] = df["level"].replace("", "estado").fillna("estado")
     return df.dropna(subset=["date"])
 
 
@@ -451,6 +453,10 @@ class DataStore:
                 geo_frames.append(google_api.fetch_geo(api.get("google_ads", {}), dias))
             except Exception as exc:  # noqa: BLE001
                 print(f"[geo] google falhou: {exc}")
+            try:
+                geo_frames.append(google_api.fetch_geo_city(api.get("google_ads", {}), dias))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[geo-cidade] google falhou: {exc}")
             geo_frames = [g for g in geo_frames if g is not None and len(g)]
             geo_df = pd.concat(geo_frames, ignore_index=True) if geo_frames else empty_geo
             return meta_df, google_df, geo_df, "API (Meta + Google Ads)"

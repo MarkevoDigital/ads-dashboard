@@ -173,6 +173,8 @@ def api_data():
     maybe_refresh()
     account = request.args.get("account", "todas")
     platform = request.args.get("platform", "todas")
+    start = request.args.get("start") or None   # AAAA-MM-DD (mes/personalizado)
+    end = request.args.get("end") or None
     try:
         days = int(request.args.get("days", 30))
     except ValueError:
@@ -198,7 +200,8 @@ def api_data():
             cliente_sel = ""
 
     payload = analytics.build_payload(
-        store, account=account, platform=platform, days=days, scope=scope)
+        store, account=account, platform=platform, days=days, scope=scope,
+        start=start, end=end)
     # Distingue "carregando" (cache ainda vazio logo apos reiniciar) de "sem dados".
     if payload.get("vazio") and store.updated_at is None:
         payload["carregando"] = True

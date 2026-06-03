@@ -295,8 +295,10 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     since, until = _date_range(days)
     rows = []
     # user_location_view = cidade REAL do usuario (geographic_view quase nao popula cidade).
+    # AGREGA o periodo (sem segments.date) -> 1 linha por cidade/conta (rapido); seria
+    # inviavel por dia (cidades x dias x contas = dezenas de milhares de linhas).
     geo_query = f"""
-        SELECT segments.geo_target_city, segments.date, metrics.clicks
+        SELECT segments.geo_target_city, metrics.clicks
         FROM user_location_view
         WHERE segments.date BETWEEN '{since}' AND '{until}'
     """
@@ -305,23 +307,22 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
         return str(rn).rsplit("/", 1)[-1] if rn else ""
 
     for cid in _customer_ids(g_cfg, client):
-        raw, city_ids = [], set()
+        by_city = {}
         try:
             for batch in service.search_stream(customer_id=cid, query=geo_query):
                 for row in batch.results:
                     rid = _rid(row.segments.geo_target_city)
                     if not rid:
                         continue
-                    city_ids.add(rid)
-                    raw.append((str(row.segments.date), rid, float(row.metrics.clicks)))
+                    by_city[rid] = by_city.get(rid, 0.0) + float(row.metrics.clicks)
         except GoogleAdsException as exc:
             print(f"[google-cidade] {cid}: {exc}")
             continue
-        if not raw:
+        if not by_city:
             continue
         names = {}
         try:
-            in_clause = ",".join(sorted(city_ids))
+            in_clause = ",".join(sorted(by_city))
             gtc_query = (
                 "SELECT geo_target_constant.id, geo_target_constant.name "
                 "FROM geo_target_constant "
@@ -332,14 +333,15 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                     names[str(row.geo_target_constant.id)] = row.geo_target_constant.name
         except GoogleAdsException as exc:
             print(f"[google-cidade] resolve {cid}: {exc}")
-        for date, rid, clk in raw:
+        for rid, clk in by_city.items():
             cidade = names.get(rid, "")
-            if not cidade:
+            if not cidade or clk <= 0:
                 continue
             coord = _CITY_BY_NORM.get(_norm(cidade))
             name = coord[0] if coord else cidade
             lat = coord[1] if coord else 0.0
             lng = coord[2] if coord else 0.0
-            rows.append({"date": date, "account_id": cid, "platform": "google",
-                         "level": "cidade", "city": name, "lat": lat, "lng": lng, "clicks": clk})
+            rows.append({"date": until.isoformat() if hasattr(until, "isoformat") else until,
+                         "account_id": cid, "platform": "google", "level": "cidade",
+                         "city": name, "lat": lat, "lng": lng, "clicks": clk})
     return pd.DataFrame(rows)

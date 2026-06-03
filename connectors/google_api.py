@@ -294,10 +294,10 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     service = client.get_service("GoogleAdsService")
     since, until = _date_range(days)
     rows = []
+    # user_location_view = cidade REAL do usuario (geographic_view quase nao popula cidade).
     geo_query = f"""
-        SELECT segments.geo_target_city, segments.date,
-               geographic_view.location_type, metrics.clicks
-        FROM geographic_view
+        SELECT segments.geo_target_city, segments.date, metrics.clicks
+        FROM user_location_view
         WHERE segments.date BETWEEN '{since}' AND '{until}'
     """
 
@@ -309,8 +309,6 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
         try:
             for batch in service.search_stream(customer_id=cid, query=geo_query):
                 for row in batch.results:
-                    if row.geographic_view.location_type.name != "LOCATION_OF_PRESENCE":
-                        continue
                     rid = _rid(row.segments.geo_target_city)
                     if not rid:
                         continue

@@ -99,10 +99,14 @@ def _paged_get(url, params):
 
 
 def _account_ids(meta_cfg: dict, token: str, version: str) -> list[str]:
-    """IDs das contas configuradas; se vazio, descobre todas via /me/adaccounts."""
-    ids = [a for a in (meta_cfg.get("ad_account_ids") or []) if a]
+    """IDs das contas configuradas; se vazio/placeholder, descobre via /me/adaccounts."""
+    ids = []
+    for a in (meta_cfg.get("ad_account_ids") or []):
+        digits = "".join(c for c in str(a) if c.isdigit())
+        if digits and set(digits) != {"0"}:  # ignora vazio e placeholder (so zeros)
+            ids.append(a if str(a).startswith("act_") else f"act_{digits}")
     if ids:
-        return [a if a.startswith("act_") else f"act_{a}" for a in ids]
+        return ids
     url = f"{GRAPH}/{version}/me/adaccounts"
     params = {"fields": "account_id", "limit": 500, "access_token": token}
     out = []

@@ -8,7 +8,8 @@
     "dias_busca": 60,
     "meta": {
       "access_token": "",
-      "ad_account_ids": ["act_000000000000000"],
+      "_ad_account_ids": "deixe vazio p/ descobrir todas automaticamente via /me/adaccounts",
+      "ad_account_ids": [],
       "api_version": "v21.0",
       "_objective_map": "opcional: sobrescreve objetivo Meta -> nosso bucket",
       "objective_map": {}

@@ -75,6 +75,10 @@ def _initial_load():
 threading.Thread(target=_initial_load, daemon=True).start()
 
 app = Flask(__name__)
+# Recarrega templates do disco a cada requisicao (evita precisar reiniciar o app
+# so para servir HTML novo apos um git pull). Custo desprezivel para este trafego.
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
 
 CRON_TOKEN = config.get("cron", {}).get("token", "")
 AUTO_REFRESH_HORAS = float(config.get("atualizacao", {}).get("auto_refresh_horas", 12))

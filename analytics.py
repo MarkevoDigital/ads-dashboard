@@ -334,6 +334,18 @@ def _platform_comparison(meta_cur, google_cur) -> dict:
     return {"meta": block(meta_cur, empty_g), "google": block(empty_m, google_cur)}
 
 
+def _investimento(meta_cur, google_cur, meta_prev, google_prev) -> dict:
+    """Gasto do periodo por plataforma + total, com variacao vs periodo anterior."""
+    eg = pd.DataFrame(columns=["impressions", "clicks", "cost", "conversions", "conversion_value"])
+    em = pd.DataFrame(columns=meta_cur.columns)
+    sp = lambda m, g: round(M.kpi_value(m, g, "spend"), 2)
+    meta_a, meta_p = sp(meta_cur, eg), sp(meta_prev, eg)
+    goog_a, goog_p = sp(em, google_cur), sp(em, google_prev)
+    tot_a, tot_p = round(meta_a + goog_a, 2), round(meta_p + goog_p, 2)
+    blk = lambda a, p: {"atual": a, "anterior": p, "delta_pct": M.pct_change(a, p)}
+    return {"meta": blk(meta_a, meta_p), "google": blk(goog_a, goog_p), "total": blk(tot_a, tot_p)}
+
+
 def _period_comparison(meta_cur, google_cur, meta_prev, google_prev, history) -> list[dict]:
     keys = ["spend", "impressions", "clicks", "ctr", "cpc", "conversions",
             "video_views", "profile_visits", "engagement", "revenue", "cpa"]
@@ -423,6 +435,7 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         },
         "contas": contas_visiveis,
         "funil": _funnel(meta_cur, google_cur),
+        "investimento": _investimento(meta_cur, google_cur, meta_prev, google_prev),
         "blocos_objetivo": blocks,
         "serie_temporal": _time_series(meta_cur, google_cur),
         "melhores_anuncios": _best_ads(meta_cur),

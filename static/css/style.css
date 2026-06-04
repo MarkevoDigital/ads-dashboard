@@ -145,6 +145,19 @@ tbody tr:hover { background: var(--panel-2); }
   border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer;
 }
 .geo-tab.active { background: var(--brand); color: #fff; border-color: transparent; }
+/* Seção Investimento (Meta / Google / Total) */
+.invest-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.invest-card { background: var(--panel-2); border: 1px solid var(--line);
+  border-left: 4px solid var(--brand); border-radius: 10px; padding: 14px 16px; }
+.invest-card.iv-meta { border-left-color: #5b8cff; }
+.invest-card.iv-google { border-left-color: #2ecc8f; }
+.invest-card.iv-total { border-left-color: #ffb547; background: rgba(255,181,71,.06); }
+.iv-label { color: var(--muted); font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .3px; }
+.iv-value { font-size: 26px; font-weight: 700; color: var(--txt); margin: 4px 0 2px; }
+.iv-delta { font-size: 12px; color: var(--muted); }
+.iv-prev { font-size: 11px; color: var(--muted); margin-top: 6px; }
+@media (max-width: 720px) { .invest-grid { grid-template-columns: 1fr; } }
 /* Tabela de cliques por cidade (abaixo do mapa) */
 .geo-cities { margin-top: 16px; }
 .geo-cities-title { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 8px; }

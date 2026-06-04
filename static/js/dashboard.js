@@ -118,6 +118,7 @@
 
     renderFunnel(data.funil);
     renderComments(data.comentarios);
+    renderInvestimento(data.investimento);
     renderObjectiveBlocks(data.blocos_objetivo);
     renderTrend(data.serie_temporal);
     renderBestAds(data.melhores_anuncios);
@@ -165,6 +166,26 @@
       }
     });
     wrap.innerHTML = html;
+  }
+
+  // ---- Investimento por plataforma ----
+  function renderInvestimento(inv) {
+    const wrap = $("investimento");
+    if (!inv) { wrap.innerHTML = ""; return; }
+    const card = (label, cls, d) => {
+      const dt = (d.delta_pct === null || d.delta_pct === undefined)
+        ? `<span class="iv-delta">— vs. período anterior</span>`
+        : `<span class="iv-delta">${d.delta_pct > 0 ? "▲" : d.delta_pct < 0 ? "▼" : "■"} ${Math.abs(d.delta_pct).toFixed(1).replace(".", ",")}% vs. anterior</span>`;
+      return `<div class="invest-card ${cls}">
+        <div class="iv-label">${label}</div>
+        <div class="iv-value">${fmt(d.atual, "currency")}</div>
+        ${dt}
+        <div class="iv-prev">Anterior: ${fmt(d.anterior, "currency")}</div>
+      </div>`;
+    };
+    wrap.innerHTML = card("Meta Ads", "iv-meta", inv.meta)
+      + card("Google Ads", "iv-google", inv.google)
+      + card("Total", "iv-total", inv.total);
   }
 
   // ---- Comentario unico ----

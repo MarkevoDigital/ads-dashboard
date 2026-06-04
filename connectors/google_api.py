@@ -137,8 +137,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
 
     kw_query = f"""
         SELECT segments.date, customer.descriptive_name, campaign.name,
-               campaign.advertising_channel_type, campaign_budget.amount_micros,
-               ad_group.name,
+               campaign.advertising_channel_type, ad_group.name,
                ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
                metrics.impressions, metrics.clicks, metrics.cost_micros,
                metrics.conversions, metrics.conversions_value
@@ -148,17 +147,26 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     """
     camp_query = f"""
         SELECT segments.date, customer.descriptive_name, campaign.name,
-               campaign.advertising_channel_type, campaign_budget.amount_micros,
+               campaign.advertising_channel_type,
                metrics.impressions, metrics.clicks, metrics.cost_micros,
                metrics.conversions, metrics.conversions_value
         FROM campaign
         WHERE segments.date BETWEEN '{since}' AND '{until}'
           AND campaign.advertising_channel_type != 'SEARCH'
     """
+    # orcamento diario por campanha (query separada -> nao quebra o fetch principal)
+    budget_query = "SELECT campaign.name, campaign_budget.amount_micros FROM campaign"
 
     match_type_pt = {0: "", 1: "", 2: "Exata", 3: "Frase", 4: "Ampla"}
 
     for cid in _customer_ids(g_cfg, client):
+        budget_map = {}
+        try:
+            for batch in service.search_stream(customer_id=cid, query=budget_query):
+                for row in batch.results:
+                    budget_map[row.campaign.name] = row.campaign_budget.amount_micros / 1_000_000.0
+        except GoogleAdsException as exc:
+            print(f"[google] orcamentos {cid}: {exc}")
         try:
             # Palavras-chave (Pesquisa)
             for batch in service.search_stream(customer_id=cid, query=kw_query):
@@ -182,7 +190,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "conversion_value": float(row.metrics.conversions_value),
                         "video_views": 0.0,
                         "interactions": float(row.metrics.clicks),
-                        "daily_budget": row.campaign_budget.amount_micros / 1_000_000.0,
+                        "daily_budget": budget_map.get(row.campaign.name, 0.0),
                     })
             # Demais campanhas (totais)
             for batch in service.search_stream(customer_id=cid, query=camp_query):
@@ -205,7 +213,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "conversion_value": float(row.metrics.conversions_value),
                         "video_views": 0.0,
                         "interactions": float(row.metrics.clicks),
-                        "daily_budget": row.campaign_budget.amount_micros / 1_000_000.0,
+                        "daily_budget": budget_map.get(row.campaign.name, 0.0),
                     })
         except GoogleAdsException as exc:
             print(f"[google] erro na conta {cid}: {exc}")

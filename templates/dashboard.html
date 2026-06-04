@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard de Ads — Meta + Google</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=6">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=7">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -111,21 +111,18 @@
       <div id="period-wrap" class="table-wrap"></div>
     </section>
 
-    <!-- Mapa de calor geografico -->
+    <!-- Mapa de calor geografico (por estados) + tabela de cidades -->
     <section class="card" id="geo-section">
-      <h2>📍 Mapa de calor — cliques por localização</h2>
-      <div class="geo-toggle" id="geo-toggle">
-        <button type="button" class="geo-tab active" data-level="estado">Estados</button>
-        <button type="button" class="geo-tab" data-level="cidade">Cidades</button>
-      </div>
+      <h2>📍 Mapa de calor — cliques por estado</h2>
       <div id="geo-map" class="geo-map"></div>
       <div id="geo-top" class="geo-top"></div>
+      <div id="geo-cities" class="geo-cities hidden"></div>
     </section>
   </main>
 
   <div id="loading" class="loading hidden">Carregando…</div>
   <footer class="foot">Atualização automática diária · Meta Ads + Google Ads</footer>
 
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=6"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=7"></script>
 </body>
 </html>

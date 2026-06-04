@@ -5,8 +5,7 @@
   const $ = (id) => document.getElementById(id);
   let trendChart = null, platformChart = null, clientLoaded = false, accountsSig = null;
   let geoMap = null, heatLayer = null, monthsLoaded = false;
-  let geoData = { estado: null, cidade: null }, geoLevel = "estado";
-  const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  const MESES =["janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
   const nf = new Intl.NumberFormat("pt-BR");
@@ -128,12 +127,10 @@
     renderKeywords(data.palavras_chave);
     renderPlatform(data.comparativo_plataforma);
     renderPeriod(data.comparativo_periodo);
-    // Geo: guarda os dois níveis; o toggle "Cidades" só aparece se houver dados de cidade.
-    geoData.estado = data.geo; geoData.cidade = data.geo_cidades;
-    const temCidade = data.geo_cidades && (data.geo_cidades.cidades || []).length;
-    $("geo-toggle").classList.toggle("hidden", !temCidade);
-    if (!temCidade && geoLevel === "cidade") { geoLevel = "estado"; setGeoTab("estado"); }
-    renderGeoLevel();
+    // Mapa de calor SEMPRE por Estados (Meta + Google somados). As cidades vão numa
+    // tabela abaixo do mapa (oculta para clientes sem dados de cidade / sem Google).
+    renderGeo(data.geo);
+    renderGeoCities(data.geo_cidades);
   }
 
   // ---- Seletor de meses (gera os últimos 6 meses a partir da data final dos dados) ----
@@ -150,14 +147,6 @@
       mm--; if (mm < 1) { mm = 12; yy--; }
     }
     monthsLoaded = true;
-  }
-
-  function setGeoTab(level) {
-    document.querySelectorAll("#geo-toggle .geo-tab").forEach(
-      (b) => b.classList.toggle("active", b.dataset.level === level));
-  }
-  function renderGeoLevel() {
-    renderGeo(geoData[geoLevel] || { points: [], max: 0, cidades: [] });
   }
 
   // ---- Funil ----
@@ -234,14 +223,17 @@
     const extraHead = extra.map((c) => `<th>${c.label}</th>`).join("");
     const body = rows.map((r) => {
       const extraCells = extra.map((c) => `<td>${fmt(r[c.key], c.fmt)}</td>`).join("");
+      const dot = `<span class="status-dot ${r.ativo ? "on" : "off"}" title="${r.ativo ? "Em veiculação" : "Não ativa no momento"}"></span>`;
       return `<tr>
+        <td class="status-cell">${dot}</td>
         <td><span class="plat ${r.plataforma.toLowerCase()}">${r.plataforma}</span></td>
         <td>${r.campanha}</td><td>${r.objetivo}</td>
         <td>${fmt(r.spend, "currency")}</td><td>${fmt(r.impressions, "int")}</td>
         <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.ctr, "pct")}</td>
         <td>${fmt(r.conversions, "int")}</td><td>${fmt(r.cpa, "currency")}</td>${extraCells}</tr>`;
     }).join("");
-    wrap.innerHTML = `<table><thead><tr><th>Plataforma</th><th>Campanha</th><th>Objetivo</th>
+    wrap.innerHTML = `<table><thead><tr><th title="Verde = em veiculação · Vermelho = inativa">●</th>
+      <th>Plataforma</th><th>Campanha</th><th>Objetivo</th>
       <th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
       <tbody>${body}</tbody></table>`;
   }
@@ -324,33 +316,47 @@
     });
   }
 
-  // ---- Mapa de calor geografico ----
+  // Gradiente forte (alta saturação já em valores baixos -> regiões visíveis sem zoom).
+  const HEAT_GRAD = { 0.0: "#2c7fb8", 0.3: "#00e0ff", 0.5: "#7fff2a",
+                      0.7: "#ffd000", 0.85: "#ff7a00", 1.0: "#ff1500" };
+
+  // ---- Mapa de calor geografico (sempre por ESTADOS; Meta + Google somados) ----
   function renderGeo(geo) {
     const sec = $("geo-section");
     const pts = (geo && geo.points) || [];
-    const cidades = (geo && geo.cidades) || [];
-    if (!pts.length && !cidades.length) { sec.classList.add("hidden"); return; }
+    const estados = (geo && geo.cidades) || [];
+    if (!pts.length) { sec.classList.add("hidden"); return; }
     sec.classList.remove("hidden");
-    const mapEl = $("geo-map");
-    if (pts.length) {
-      mapEl.style.display = "";
-      if (!geoMap) {
-        geoMap = L.map("geo-map", { scrollWheelZoom: false }).setView([-15.6, -47.8], 4);
-        L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-          { maxZoom: 18, attribution: "© OpenStreetMap · © CARTO" }).addTo(geoMap);
-      }
-      if (heatLayer) geoMap.removeLayer(heatLayer);
-      const mx = geo.max || 1;
-      const hp = pts.map((p) => [p[0], p[1], Math.max(p[2] / mx, 0.15)]);
-      heatLayer = L.heatLayer(hp, { radius: 32, blur: 22, maxZoom: 10 }).addTo(geoMap);
-      try { geoMap.fitBounds(L.latLngBounds(pts.map((p) => [p[0], p[1]])).pad(0.3)); } catch (e) {}
-      setTimeout(() => geoMap.invalidateSize(), 250);
-    } else if (geoMap) {
-      // sem coordenadas (ex.: cidades pequenas) -> esconde o mapa, mostra só o ranking
-      mapEl.style.display = "none";
+    if (!geoMap) {
+      geoMap = L.map("geo-map", { scrollWheelZoom: false }).setView([-15.6, -47.8], 4);
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        { maxZoom: 18, attribution: "© OpenStreetMap · © CARTO" }).addTo(geoMap);
     }
-    $("geo-top").innerHTML = cidades.map((c) =>
+    if (heatLayer) geoMap.removeLayer(heatLayer);
+    const mx = geo.max || 1;
+    // piso 0.45 + raiz quadrada -> realça regiões de menor volume; cores fortes.
+    const hp = pts.map((p) => [p[0], p[1], Math.max(Math.sqrt(p[2] / mx), 0.45)]);
+    heatLayer = L.heatLayer(hp, {
+      radius: 42, blur: 16, max: 1.0, minOpacity: 0.45, maxZoom: 10, gradient: HEAT_GRAD,
+    }).addTo(geoMap);
+    try { geoMap.fitBounds(L.latLngBounds(pts.map((p) => [p[0], p[1]])).pad(0.3)); } catch (e) {}
+    setTimeout(() => geoMap.invalidateSize(), 250);
+    $("geo-top").innerHTML = estados.map((c) =>
       `<span class="geo-chip">${c.city}: <b>${fmt(c.clicks, "int")}</b></span>`).join("");
+  }
+
+  // ---- Tabela de cliques por CIDADE (abaixo do mapa; só clientes com dados de cidade) ----
+  function renderGeoCities(geo) {
+    const wrap = $("geo-cities");
+    if (!wrap) return;
+    const cidades = (geo && geo.cidades) || [];
+    if (!cidades.length) { wrap.classList.add("hidden"); wrap.innerHTML = ""; return; }
+    wrap.classList.remove("hidden");
+    const body = cidades.map((c, i) => `<tr>
+      <td>${i + 1}</td><td>${c.city}</td><td>${fmt(c.clicks, "int")}</td></tr>`).join("");
+    wrap.innerHTML = `<h3 class="geo-cities-title">Cliques por cidade (Google)</h3>
+      <div class="table-wrap"><table><thead><tr><th>#</th><th>Cidade</th>
+      <th>Cliques</th></tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
   function baseOpts({ stacked }) {
@@ -374,11 +380,6 @@
   });
   $("f-start").addEventListener("change", () => { if ($("f-end").value) load(); });
   $("f-end").addEventListener("change", () => { if ($("f-start").value) load(); });
-  // Mapa: alterna entre Estados e Cidades (sem recarregar — os dois vêm no payload).
-  document.querySelectorAll("#geo-toggle .geo-tab").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      geoLevel = btn.dataset.level; setGeoTab(geoLevel); renderGeoLevel();
-    }));
   // Admin troca de cliente: zera a conta selecionada e força repopular as contas.
   $("f-client").addEventListener("change", () => {
     $("f-account").value = "todas"; accountsSig = null; load();

@@ -145,6 +145,14 @@ tbody tr:hover { background: var(--panel-2); }
   border-radius: 8px; padding: 5px 14px; font-size: 13px; cursor: pointer;
 }
 .geo-tab.active { background: var(--brand); color: #fff; border-color: transparent; }
+/* Tabela de cliques por cidade (abaixo do mapa) */
+.geo-cities { margin-top: 16px; }
+.geo-cities-title { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+/* Status de veiculacao da campanha (verde = ativa, vermelho = inativa) */
+.status-cell { text-align: center; }
+.status-dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; }
+.status-dot.on { background: var(--good); box-shadow: 0 0 6px var(--good); }
+.status-dot.off { background: var(--bad); box-shadow: 0 0 6px var(--bad); }
 .foot { text-align: center; color: var(--muted); font-size: 11px; padding: 18px; }
 .empty { color: var(--muted); padding: 18px; text-align: center; }
 

@@ -237,9 +237,13 @@ _META_CONV_COL = {
 
 def _campaigns(meta_cur, google_cur) -> list[dict]:
     rows = []
+    # "Em veiculacao" = teve entrega (spend/impressoes) no dia mais recente dos dados.
+    all_d = list(meta_cur["date"]) + list(google_cur["date"])
+    last = max(all_d) if all_d else None
     for plat, df, is_meta in [("Meta", meta_cur, True), ("Google", google_cur, False)]:
         if df is None or df.empty:
             continue
+        spend_col = "spend" if is_meta else "cost"
         for camp, g in df.groupby("campaign"):
             if not str(camp).strip():
                 continue
@@ -249,6 +253,9 @@ def _campaigns(meta_cur, google_cur) -> list[dict]:
             spend = float(g["spend"].sum()) if is_meta else float(g["cost"].sum())
             impr = float(g["impressions"].sum())
             clk = float(g["clicks"].sum())
+            gl = g[g["date"] == last] if last is not None else g.iloc[0:0]
+            ativo = bool(len(gl) and (float(gl[spend_col].sum()) > 0
+                                      or float(gl["impressions"].sum()) > 0))
             if is_meta:
                 col = _META_CONV_COL.get(cfg.get("conv_key"))
                 conv = float(g[col].sum()) if col and col in g.columns else 0.0
@@ -268,7 +275,7 @@ def _campaigns(meta_cur, google_cur) -> list[dict]:
                 "conversions": round(conv, 1),
                 "cpa": round(spend / conv, 2) if conv else 0.0,
                 "video_views": int(video), "profile_visits": int(ig_visits),
-                "engagement": int(eng),
+                "engagement": int(eng), "ativo": ativo,
             })
     rows.sort(key=lambda r: r["spend"], reverse=True)
     return rows

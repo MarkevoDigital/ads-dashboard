@@ -237,13 +237,13 @@ _META_CONV_COL = {
 
 def _campaigns(meta_cur, google_cur) -> list[dict]:
     rows = []
-    # "Em veiculacao" = teve entrega (spend/impressoes) no dia mais recente dos dados.
-    all_d = list(meta_cur["date"]) + list(google_cur["date"])
-    last = max(all_d) if all_d else None
     for plat, df, is_meta in [("Meta", meta_cur, True), ("Google", google_cur, False)]:
         if df is None or df.empty:
             continue
         spend_col = "spend" if is_meta else "cost"
+        # "Em veiculacao" = teve entrega no dia mais recente DESTA plataforma (Meta e Google
+        # podem ter datas finais diferentes; usar a data global marcaria Meta como inativo).
+        last = df["date"].max()
         for camp, g in df.groupby("campaign"):
             if not str(camp).strip():
                 continue

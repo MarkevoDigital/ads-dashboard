@@ -284,6 +284,45 @@ def _campaigns(meta_cur, google_cur) -> list[dict]:
     return rows
 
 
+def _ads(meta_cur) -> list[dict]:
+    """Anuncios veiculados (Meta), agrupados por nome+campanha. So Meta tem dados por
+    anuncio; o Google e nivel campanha/palavra-chave. Mesmo formato da tabela de campanhas,
+    com a coluna 'campanha' indicando a qual campanha o anuncio pertence."""
+    if meta_cur is None or meta_cur.empty:
+        return []
+    last = meta_cur["date"].max()
+    rows = []
+    for (ad, camp), g in meta_cur.groupby(["ad_name", "campaign"], dropna=False):
+        if not str(ad).strip():
+            continue
+        impr = float(g["impressions"].sum())
+        if impr <= 0:          # "veiculados" = anuncios que tiveram entrega
+            continue
+        objs = g["objective"].mode()
+        obj = objs.iloc[0] if len(objs) else "outros"
+        cfg = M.objective_config(obj)
+        spend = float(g["spend"].sum())
+        clk = float(g["clicks"].sum())
+        col = _META_CONV_COL.get(cfg.get("conv_key"))
+        conv = float(g[col].sum()) if col and col in g.columns else 0.0
+        gl = g[g["date"] == last] if last is not None else g.iloc[0:0]
+        ativo = bool(len(gl) and (float(gl["spend"].sum()) > 0 or float(gl["impressions"].sum()) > 0))
+        rows.append({
+            "plataforma": "Meta", "anuncio": str(ad), "campanha": str(camp),
+            "objetivo": cfg["label"], "spend": round(spend, 2),
+            "impressions": int(impr), "clicks": int(clk),
+            "ctr": round(clk / impr, 4) if impr else 0.0,
+            "conversions": round(conv, 1),
+            "cpa": round(spend / conv, 2) if conv else 0.0,
+            "video_views": int(g["video_views"].sum()) if "video_views" in g.columns else 0,
+            "profile_visits": int(g["profile_visits"].sum()) if "profile_visits" in g.columns else 0,
+            "engagement": int(g["engagement"].sum()) if "engagement" in g.columns else 0,
+            "ativo": ativo,
+        })
+    rows.sort(key=lambda r: (r["conversions"], r["spend"]), reverse=True)
+    return rows
+
+
 # ----------------------------------------------------------------------------
 # Geo (mapa de calor)
 # ----------------------------------------------------------------------------
@@ -441,6 +480,7 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         "melhores_anuncios": _best_ads(meta_cur),
         "palavras_chave": _keywords(google_cur),
         "campanhas": _campaigns(meta_cur, google_cur),
+        "anuncios": _ads(meta_cur),
         "geo": _geo(store.geo, scope, start, end, "estado"),
         "geo_cidades": _geo(store.geo, scope, start, end, "cidade"),
         "comparativo_plataforma": _platform_comparison(meta_cur, google_cur),

@@ -106,6 +106,7 @@
       $("objective-blocks").innerHTML = "";
       $("best-ads").innerHTML = `<div class="empty">${data.carregando ? "Carregando…" : "Sem anúncios."}</div>`;
       $("keywords-wrap").innerHTML = ""; $("campaigns-wrap").innerHTML = "";
+      $("ads-wrap").innerHTML = "";
       $("geo-section").classList.add("hidden");
       return;
     }
@@ -122,8 +123,11 @@
     renderObjectiveBlocks(data.blocos_objetivo);
     renderTrend(data.serie_temporal);
     renderBestAds(data.melhores_anuncios);
-    // Melhores anúncios são do Meta Ads -> ocultar quando o filtro é "Somente Google".
-    $("best-ads-section").classList.toggle("hidden", (data.filtros || {}).platform === "google");
+    renderAds(data.anuncios);
+    // Anúncios (melhores + tabela) são do Meta -> ocultar quando o filtro é "Somente Google".
+    const soGoogle = (data.filtros || {}).platform === "google";
+    $("best-ads-section").classList.toggle("hidden", soGoogle);
+    $("ads-table-section").classList.toggle("hidden", soGoogle);
     renderCampaigns(data.campanhas);
     renderKeywords(data.palavras_chave);
     renderPlatform(data.comparativo_plataforma);
@@ -264,6 +268,33 @@
     wrap.innerHTML = `<table><thead><tr><th title="Verde = em veiculação · Vermelho = inativa">●</th>
       <th>Plataforma</th><th>Campanha</th><th>Objetivo</th>
       <th title="Orçamento diário">Orç./dia</th><th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
+      <tbody>${body}</tbody></table>`;
+  }
+
+  // ---- Anúncios veiculados (Meta) ----
+  function renderAds(rows) {
+    const wrap = $("ads-wrap");
+    if (!rows || !rows.length) { wrap.innerHTML = `<div class="empty">Sem anúncios veiculados no período.</div>`; return; }
+    const extra = [
+      { key: "video_views", label: "Views vídeo", fmt: "int" },
+      { key: "profile_visits", label: "Visitas IG", fmt: "int" },
+      { key: "engagement", label: "Engaj.", fmt: "int" },
+    ].filter((c) => rows.some((r) => (r[c.key] || 0) > 0));
+    const extraHead = extra.map((c) => `<th>${c.label}</th>`).join("");
+    const body = rows.map((r) => {
+      const extraCells = extra.map((c) => `<td>${fmt(r[c.key], c.fmt)}</td>`).join("");
+      const dot = `<span class="status-dot ${r.ativo ? "on" : "off"}" title="${r.ativo ? "Em veiculação" : "Não ativo no momento"}"></span>`;
+      return `<tr>
+        <td class="status-cell">${dot}</td>
+        <td><span class="plat ${r.plataforma.toLowerCase()}">${r.plataforma}</span></td>
+        <td>${r.anuncio}</td><td>${r.campanha}</td><td>${r.objetivo}</td>
+        <td>${fmt(r.spend, "currency")}</td><td>${fmt(r.impressions, "int")}</td>
+        <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.ctr, "pct")}</td>
+        <td>${fmt(r.conversions, "int")}</td><td>${fmt(r.cpa, "currency")}</td>${extraCells}</tr>`;
+    }).join("");
+    wrap.innerHTML = `<table><thead><tr><th title="Verde = em veiculação · Vermelho = inativo">●</th>
+      <th>Plataforma</th><th>Anúncio</th><th>Campanha</th><th>Objetivo</th>
+      <th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
       <tbody>${body}</tbody></table>`;
   }
 

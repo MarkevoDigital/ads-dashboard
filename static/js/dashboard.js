@@ -197,16 +197,23 @@
   function renderBestAds(ads) {
     const wrap = $("best-ads");
     if (!ads || !ads.length) { wrap.innerHTML = `<div class="empty">Sem anúncios com investimento relevante.</div>`; return; }
-    wrap.innerHTML = ads.map((a, i) => `
+    wrap.innerHTML = ads.map((a, i) => {
+      const link = a.permalink || "";
+      const img = `<img class="thumb" src="${a.thumbnail}" alt="Print do anuncio" loading="lazy" onerror="this.style.display='none'">`;
+      const thumb = link ? `<a href="${link}" target="_blank" rel="noopener" title="Abrir anúncio">${img}</a>` : img;
+      const verLink = link ? `<a class="ad-link" href="${link}" target="_blank" rel="noopener">Ver anúncio ↗</a>` : "";
+      return `
       <div class="ad-card" style="position:relative">
         <div class="rank-badge">${i + 1}</div>
-        <img class="thumb" src="${a.thumbnail}" alt="Print do anuncio" loading="lazy" onerror="this.style.display='none'">
+        ${thumb}
         <div class="ad-body">
           <div class="ad-name">${a.ad_name}</div>
           <div class="ad-tag">${a.account} · ${a.objective_label}</div>
           <div class="ad-metric">${fmt(a.result_value, a.result_fmt)}<small>${a.result_label}</small></div>
           <div class="ad-sub">${a.eff_label}: ${fmt(a.eff_value, a.eff_fmt)} · Invest.: ${fmt(a.spend, "currency")} · CTR ${fmt(a.ctr, "pct")} · ${fmt(a.impressions, "int")} impr.</div>
-        </div></div>`).join("");
+          ${verLink}
+        </div></div>`;
+    }).join("");
   }
 
   // ---- Campanhas por plataforma ----
@@ -224,17 +231,18 @@
     const body = rows.map((r) => {
       const extraCells = extra.map((c) => `<td>${fmt(r[c.key], c.fmt)}</td>`).join("");
       const dot = `<span class="status-dot ${r.ativo ? "on" : "off"}" title="${r.ativo ? "Em veiculação" : "Não ativa no momento"}"></span>`;
+      const orc = r.orcamento_diario ? fmt(r.orcamento_diario, "currency") : "—";
       return `<tr>
         <td class="status-cell">${dot}</td>
         <td><span class="plat ${r.plataforma.toLowerCase()}">${r.plataforma}</span></td>
         <td>${r.campanha}</td><td>${r.objetivo}</td>
-        <td>${fmt(r.spend, "currency")}</td><td>${fmt(r.impressions, "int")}</td>
+        <td>${orc}</td><td>${fmt(r.spend, "currency")}</td><td>${fmt(r.impressions, "int")}</td>
         <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.ctr, "pct")}</td>
         <td>${fmt(r.conversions, "int")}</td><td>${fmt(r.cpa, "currency")}</td>${extraCells}</tr>`;
     }).join("");
     wrap.innerHTML = `<table><thead><tr><th title="Verde = em veiculação · Vermelho = inativa">●</th>
       <th>Plataforma</th><th>Campanha</th><th>Objetivo</th>
-      <th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
+      <th title="Orçamento diário">Orç./dia</th><th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
       <tbody>${body}</tbody></table>`;
   }
 
@@ -334,10 +342,11 @@
     }
     if (heatLayer) geoMap.removeLayer(heatLayer);
     const mx = geo.max || 1;
-    // piso 0.45 + raiz quadrada -> realça regiões de menor volume; cores fortes.
-    const hp = pts.map((p) => [p[0], p[1], Math.max(Math.sqrt(p[2] / mx), 0.45)]);
+    // Escala PROGRESSIVA por volume: piso baixo (0.06) + raiz -> pouco volume = mancha
+    // pequena e clara; muito volume = mancha grande e forte (degradê real de calor).
+    const hp = pts.map((p) => [p[0], p[1], Math.max(Math.sqrt(p[2] / mx), 0.06)]);
     heatLayer = L.heatLayer(hp, {
-      radius: 42, blur: 16, max: 1.0, minOpacity: 0.45, maxZoom: 10, gradient: HEAT_GRAD,
+      radius: 36, blur: 18, max: 1.0, minOpacity: 0.06, maxZoom: 10, gradient: HEAT_GRAD,
     }).addTo(geoMap);
     try { geoMap.fitBounds(L.latLngBounds(pts.map((p) => [p[0], p[1]])).pad(0.3)); } catch (e) {}
     setTimeout(() => geoMap.invalidateSize(), 250);

@@ -137,7 +137,8 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
 
     kw_query = f"""
         SELECT segments.date, customer.descriptive_name, campaign.name,
-               campaign.advertising_channel_type, ad_group.name,
+               campaign.advertising_channel_type, campaign_budget.amount_micros,
+               ad_group.name,
                ad_group_criterion.keyword.text, ad_group_criterion.keyword.match_type,
                metrics.impressions, metrics.clicks, metrics.cost_micros,
                metrics.conversions, metrics.conversions_value
@@ -147,7 +148,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     """
     camp_query = f"""
         SELECT segments.date, customer.descriptive_name, campaign.name,
-               campaign.advertising_channel_type,
+               campaign.advertising_channel_type, campaign_budget.amount_micros,
                metrics.impressions, metrics.clicks, metrics.cost_micros,
                metrics.conversions, metrics.conversions_value
         FROM campaign
@@ -181,6 +182,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "conversion_value": float(row.metrics.conversions_value),
                         "video_views": 0.0,
                         "interactions": float(row.metrics.clicks),
+                        "daily_budget": row.campaign_budget.amount_micros / 1_000_000.0,
                     })
             # Demais campanhas (totais)
             for batch in service.search_stream(customer_id=cid, query=camp_query):
@@ -203,6 +205,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "conversion_value": float(row.metrics.conversions_value),
                         "video_views": 0.0,
                         "interactions": float(row.metrics.clicks),
+                        "daily_budget": row.campaign_budget.amount_micros / 1_000_000.0,
                     })
         except GoogleAdsException as exc:
             print(f"[google] erro na conta {cid}: {exc}")

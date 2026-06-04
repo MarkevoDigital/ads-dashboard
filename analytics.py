@@ -267,9 +267,11 @@ def _campaigns(meta_cur, google_cur) -> list[dict]:
                 video = float(g["video_views"].sum()) if "video_views" in g.columns else 0.0
                 ig_visits = 0.0  # Google nao tem visitas ao Instagram
                 eng = 0.0        # Google nao tem engajamento (tem interacoes)
+            budget = float(g["daily_budget"].max()) if "daily_budget" in g.columns else 0.0
             rows.append({
                 "plataforma": plat, "campanha": str(camp),
-                "objetivo": cfg["label"], "spend": round(spend, 2),
+                "objetivo": cfg["label"], "orcamento_diario": round(budget, 2),
+                "spend": round(spend, 2),
                 "impressions": int(impr), "clicks": int(clk),
                 "ctr": round(clk / impr, 4) if impr else 0.0,
                 "conversions": round(conv, 1),
@@ -277,7 +279,8 @@ def _campaigns(meta_cur, google_cur) -> list[dict]:
                 "video_views": int(video), "profile_visits": int(ig_visits),
                 "engagement": int(eng), "ativo": ativo,
             })
-    rows.sort(key=lambda r: r["spend"], reverse=True)
+    # ordena por numero de conversoes (desc); desempate por investimento.
+    rows.sort(key=lambda r: (r["conversions"], r["spend"]), reverse=True)
     return rows
 
 

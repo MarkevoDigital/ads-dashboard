@@ -161,10 +161,10 @@ def _account_ids(meta_cfg: dict, token: str, version: str) -> list[str]:
 
 
 def _thumbnails(account_id, token, version) -> dict:
-    """Mapa ad_id -> URL do thumbnail do criativo (o 'print' do anuncio)."""
+    """Mapa ad_id -> {thumb, link} (print do criativo + link de preview do anuncio)."""
     url = f"{GRAPH}/{version}/{account_id}/ads"
     params = {
-        "fields": "id,creative{thumbnail_url,image_url}",
+        "fields": "id,preview_shareable_link,creative{thumbnail_url,image_url}",
         "limit": 500,
         "access_token": token,
     }
@@ -172,10 +172,38 @@ def _thumbnails(account_id, token, version) -> dict:
     try:
         for ad in _paged_get(url, params):
             cre = ad.get("creative", {}) or {}
-            mapa[ad["id"]] = cre.get("thumbnail_url") or cre.get("image_url") or ""
+            mapa[ad["id"]] = {
+                "thumb": cre.get("thumbnail_url") or cre.get("image_url") or "",
+                "link": ad.get("preview_shareable_link") or "",
+            }
     except Exception as exc:  # noqa: BLE001
-        print(f"[meta] thumbnails indisponiveis: {exc}")
+        print(f"[meta] thumbnails/preview indisponiveis: {exc}")
     return mapa
+
+
+def _campaign_budgets(account_id, token, version) -> dict:
+    """Mapa campaign_id -> orcamento diario (na moeda). CBO (campanha) ou soma de adsets."""
+    out = {}
+    try:  # orcamento no nivel da campanha (CBO)
+        url = f"{GRAPH}/{version}/{account_id}/campaigns"
+        for c in _paged_get(url, {"fields": "id,daily_budget", "limit": 500, "access_token": token}):
+            db = c.get("daily_budget")
+            if db:
+                out[c["id"]] = float(db) / 100.0
+    except Exception as exc:  # noqa: BLE001
+        print(f"[meta] orcamentos (campanha) indisponiveis: {exc}")
+    try:  # soma dos adsets (p/ campanhas sem CBO)
+        url2 = f"{GRAPH}/{version}/{account_id}/adsets"
+        adsum = {}
+        for a in _paged_get(url2, {"fields": "campaign_id,daily_budget", "limit": 500, "access_token": token}):
+            db, cid = a.get("daily_budget"), a.get("campaign_id")
+            if db and cid:
+                adsum[cid] = adsum.get(cid, 0.0) + float(db) / 100.0
+        for cid, v in adsum.items():
+            out.setdefault(cid, v)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[meta] orcamentos (adset) indisponiveis: {exc}")
+    return out
 
 
 def _resolve_objective(meta_obj, msg, visits, obj_map) -> str:
@@ -209,12 +237,13 @@ def fetch(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
 
 def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> list[dict]:
     thumbs = _thumbnails(account_id, token, version)
+    budgets = _campaign_budgets(account_id, token, version)
     url = f"{GRAPH}/{version}/{account_id}/insights"
     params = {
         "level": "ad", "time_increment": 1,
         "time_range": f'{{"since":"{since}","until":"{until}"}}',
         "fields": ",".join([
-            "ad_id", "ad_name", "adset_name", "campaign_name", "objective",
+            "ad_id", "ad_name", "adset_name", "campaign_id", "campaign_name", "objective",
             "account_name", "impressions", "reach", "frequency", "clicks",
             "inline_link_clicks", "spend", "actions", "action_values",
         ]),
@@ -234,6 +263,7 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
         engagement = _first_action(actions, ACTION_KEYS["engagement"])
         objective = _resolve_objective(r.get("objective", ""), msg, visits, obj_map)
         ad_id = r.get("ad_id", "")
+        ad_meta = thumbs.get(ad_id, {}) or {}
         out.append({
             "date": r.get("date_start"),
             "account": r.get("account_name") or account_id,
@@ -242,8 +272,9 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
             "campaign": r.get("campaign_name", ""),
             "adset": r.get("adset_name", ""),
             "ad_name": r.get("ad_name", ""),
-            "ad_thumbnail_url": thumbs.get(ad_id, ""),
-            "ad_permalink": "",
+            "ad_thumbnail_url": ad_meta.get("thumb", ""),
+            "ad_permalink": ad_meta.get("link", ""),
+            "daily_budget": float(budgets.get(r.get("campaign_id", ""), 0.0)),
             "impressions": float(r.get("impressions", 0) or 0),
             "reach": float(r.get("reach", 0) or 0),
             "frequency": float(r.get("frequency", 0) or 0),

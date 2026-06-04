@@ -28,14 +28,14 @@ SAMPLE_DIR = os.path.join(BASE_DIR, "sample_data")
 # Colunas canonicas que o resto do app espera encontrar.
 META_COLUMNS = [
     "date", "account", "account_id", "objective", "campaign", "adset", "ad_name",
-    "ad_thumbnail_url", "ad_permalink", "impressions", "reach", "frequency",
+    "ad_thumbnail_url", "ad_permalink", "daily_budget", "impressions", "reach", "frequency",
     "clicks", "link_clicks", "spend", "messaging_conversations",
     "profile_visits", "leads", "purchases", "purchase_value",
     "site_visits", "video_views", "engagement",
 ]
 GOOGLE_COLUMNS = [
     "date", "account", "account_id", "objective", "campaign", "campaign_type",
-    "ad_group", "keyword", "match_type", "impressions", "clicks", "cost",
+    "ad_group", "keyword", "match_type", "daily_budget", "impressions", "clicks", "cost",
     "conversions", "conversion_value", "video_views", "interactions",
 ]
 GEO_COLUMNS = [
@@ -43,12 +43,12 @@ GEO_COLUMNS = [
 ]
 
 NUMERIC_META = [
-    "impressions", "reach", "frequency", "clicks", "link_clicks", "spend",
+    "daily_budget", "impressions", "reach", "frequency", "clicks", "link_clicks", "spend",
     "messaging_conversations", "profile_visits", "leads", "purchases",
     "purchase_value", "site_visits", "video_views", "engagement",
 ]
 NUMERIC_GOOGLE = [
-    "impressions", "clicks", "cost", "conversions", "conversion_value",
+    "daily_budget", "impressions", "clicks", "cost", "conversions", "conversion_value",
     "video_views", "interactions",
 ]
 NUMERIC_GEO = ["lat", "lng", "clicks"]

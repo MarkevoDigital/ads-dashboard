@@ -4,7 +4,7 @@
 
   const $ = (id) => document.getElementById(id);
   let trendChart = null, platformChart = null, clientLoaded = false, accountsSig = null;
-  let geoMap = null, heatLayer = null, monthsLoaded = false;
+  let geoMap = null, geoMarkers = null, monthsLoaded = false;
   const MESES =["janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
@@ -324,11 +324,9 @@
     });
   }
 
-  // Gradiente forte (alta saturação já em valores baixos -> regiões visíveis sem zoom).
-  const HEAT_GRAD = { 0.0: "#2c7fb8", 0.3: "#00e0ff", 0.5: "#7fff2a",
-                      0.7: "#ffd000", 0.85: "#ff7a00", 1.0: "#ff1500" };
-
-  // ---- Mapa de calor geografico (sempre por ESTADOS; Meta + Google somados) ----
+  // ---- Mapa geografico por ESTADOS (Meta + Google somados): bolhas proporcionais.
+  // Tamanho E cor escalam com o volume de cliques (degradê: pouco = pequeno/claro;
+  // muito = grande/verde forte). Determinístico e legível sem zoom.
   function renderGeo(geo) {
     const sec = $("geo-section");
     const pts = (geo && geo.points) || [];
@@ -340,14 +338,20 @@
       L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
         { maxZoom: 18, attribution: "© OpenStreetMap · © CARTO" }).addTo(geoMap);
     }
-    if (heatLayer) geoMap.removeLayer(heatLayer);
+    if (geoMarkers) geoMap.removeLayer(geoMarkers);
     const mx = geo.max || 1;
-    // Escala PROGRESSIVA por volume: piso baixo (0.06) + raiz -> pouco volume = mancha
-    // pequena e clara; muito volume = mancha grande e forte (degradê real de calor).
-    const hp = pts.map((p) => [p[0], p[1], Math.max(Math.sqrt(p[2] / mx), 0.06)]);
-    heatLayer = L.heatLayer(hp, {
-      radius: 36, blur: 18, max: 1.0, minOpacity: 0.06, maxZoom: 10, gradient: HEAT_GRAD,
-    }).addTo(geoMap);
+    geoMarkers = L.layerGroup();
+    // do maior p/ o menor -> bolhas pequenas ficam por cima e visíveis.
+    [...pts].sort((a, b) => b[2] - a[2]).forEach((p) => {
+      const s = Math.sqrt(Math.min(p[2] / mx, 1));      // 0..1 (escala suave)
+      const radius = 6 + 34 * s;                          // tamanho ∝ volume
+      const color = `hsl(128, ${50 + 45 * s}%, ${80 - 47 * s}%)`;  // claro -> verde forte
+      L.circleMarker([p[0], p[1]], {
+        radius, fillColor: color, color: "#0a4d18", weight: 0.6,
+        opacity: 0.55, fillOpacity: 0.78,
+      }).bindTooltip(fmt(p[2], "int") + " cliques", { direction: "top" }).addTo(geoMarkers);
+    });
+    geoMarkers.addTo(geoMap);
     try { geoMap.fitBounds(L.latLngBounds(pts.map((p) => [p[0], p[1]])).pad(0.3)); } catch (e) {}
     setTimeout(() => geoMap.invalidateSize(), 250);
     $("geo-top").innerHTML = estados.map((c) =>

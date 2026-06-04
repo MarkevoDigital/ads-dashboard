@@ -44,6 +44,9 @@ body {
 }
 .filters button { background: var(--brand); border-color: var(--brand); font-weight: 600; align-self: flex-end; }
 .filters button:hover { filter: brightness(1.08); }
+.filters button.btn-pdf { background: var(--panel-2); color: var(--txt); border-color: var(--line); }
+.filters button.btn-pdf:hover { border-color: var(--brand); color: var(--brand); filter: none; }
+.filters button:disabled { opacity: .6; cursor: default; filter: none; }
 
 .meta-bar {
   display: flex; justify-content: space-between; gap: 12px;

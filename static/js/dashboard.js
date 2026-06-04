@@ -357,7 +357,7 @@
     if (!geoMap) {
       geoMap = L.map("geo-map", { scrollWheelZoom: false }).setView([-15.6, -47.8], 4);
       L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-        { maxZoom: 18, attribution: "© OpenStreetMap · © CARTO" }).addTo(geoMap);
+        { maxZoom: 18, crossOrigin: true, attribution: "© OpenStreetMap · © CARTO" }).addTo(geoMap);
     }
     if (geoMarkers) geoMap.removeLayer(geoMarkers);
     const mx = geo.max || 1;
@@ -422,6 +422,37 @@
     $("loading").classList.remove("hidden");
     try { await fetch("/api/refresh", { method: "POST" }); } catch (e) { console.error(e); }
     await load();
+  });
+
+  // ---- Exportar a visualização em PDF ----
+  $("f-pdf").addEventListener("click", () => {
+    const btn = $("f-pdf");
+    if (typeof html2pdf === "undefined") { alert("Biblioteca de PDF não carregou. Recarregue a página e tente de novo."); return; }
+    const orig = btn.textContent;
+    btn.textContent = "⏳ Gerando…"; btn.disabled = true;
+    const el = $("app");
+    const nome = ($("cliente-sub").textContent || "Dashboard").trim();
+    const slug = nome.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w]+/g, "_") || "ads";
+    // título temporário p/ contexto no PDF (cliente + período/fonte)
+    const title = document.createElement("div");
+    title.style.cssText = "padding:6px 2px 12px;border-bottom:1px solid #2a3346;margin-bottom:14px";
+    title.innerHTML = `<div style="font-size:20px;font-weight:700;color:#e6eaf2">📊 Dashboard de Ads — ${nome}</div>
+      <div style="font-size:12px;color:#93a0b8;margin-top:3px">${$("src-info").textContent} · ${$("period-info").textContent}</div>`;
+    el.insertBefore(title, el.firstChild);
+    setTimeout(() => geoMap && geoMap.invalidateSize(), 50);
+    const opt = {
+      margin: [6, 6, 8, 6],
+      filename: `dashboard_${slug}.pdf`,
+      image: { type: "jpeg", quality: 0.96 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#0f1420", logging: false, scrollX: 0, scrollY: 0 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      pagebreak: { mode: ["css", "legacy"] },
+    };
+    setTimeout(() => {
+      html2pdf().set(opt).from(el).save()
+        .then(() => { try { el.removeChild(title); } catch (e) {} btn.textContent = orig; btn.disabled = false; })
+        .catch((e) => { console.error(e); try { el.removeChild(title); } catch (x) {} btn.textContent = orig; btn.disabled = false; alert("Não foi possível gerar o PDF. Tente novamente."); });
+    }, 300);
   });
 
   load();

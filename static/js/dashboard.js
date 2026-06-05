@@ -470,19 +470,37 @@
     title.innerHTML = `<div style="font-size:20px;font-weight:700;color:#e6eaf2">📊 Dashboard de Ads — ${nome}</div>
       <div style="font-size:12px;color:#93a0b8;margin-top:3px">${$("src-info").textContent} · ${$("period-info").textContent}</div>`;
     el.insertBefore(title, el.firstChild);
+    // Estilo temporário p/ impressão: largura fixa desktop, tabelas sem corte
+    // (permite quebra de célula e remove o scroll horizontal que cortava colunas)
+    const pdfStyle = document.createElement("style");
+    pdfStyle.id = "pdf-print-style";
+    pdfStyle.textContent =
+      "#app{max-width:none!important}" +
+      "#app .table-wrap{overflow:visible!important}" +
+      "#app table{table-layout:fixed!important;width:100%!important}" +
+      "#app table th,#app table td{white-space:normal!important;word-break:break-word;font-size:11px!important;padding:6px 7px!important}" +
+      "#app .two-col{grid-template-columns:1fr 1fr!important}";
+    document.head.appendChild(pdfStyle);
     setTimeout(() => geoMap && geoMap.invalidateSize(), 50);
+    const cleanup = () => {
+      try { el.removeChild(title); } catch (e) {}
+      try { document.head.removeChild(pdfStyle); } catch (e) {}
+      btn.textContent = orig; btn.disabled = false;
+    };
     const opt = {
-      margin: [6, 6, 8, 6],
+      margin: [7, 7, 8, 7],
       filename: `dashboard_${slug}.pdf`,
       image: { type: "jpeg", quality: 0.96 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#0f1420", logging: false, scrollX: 0, scrollY: 0 },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      // windowWidth fixo garante layout desktop e enquadramento consistente;
+      // landscape (A4 paisagem) dá largura suficiente p/ as tabelas não cortarem.
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#0f1420", logging: false, scrollX: 0, scrollY: 0, windowWidth: 1280 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "landscape" },
       pagebreak: { mode: ["css", "legacy"] },
     };
     setTimeout(() => {
       html2pdf().set(opt).from(el).save()
-        .then(() => { try { el.removeChild(title); } catch (e) {} btn.textContent = orig; btn.disabled = false; })
-        .catch((e) => { console.error(e); try { el.removeChild(title); } catch (x) {} btn.textContent = orig; btn.disabled = false; alert("Não foi possível gerar o PDF. Tente novamente."); });
+        .then(() => { cleanup(); })
+        .catch((e) => { console.error(e); cleanup(); alert("Não foi possível gerar o PDF. Tente novamente."); });
     }, 300);
   });
 

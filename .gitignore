@@ -21,3 +21,7 @@ sample_data/*.csv
 
 # Ferramentas locais
 .claude/
+
+# cache do store em disco (runtime)
+tmp/store_cache.pkl
+tmp/*.pkl

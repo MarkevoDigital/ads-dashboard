@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import pickle
 import threading
 from datetime import datetime, timedelta
 
@@ -24,6 +25,9 @@ import requests
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SAMPLE_DIR = os.path.join(BASE_DIR, "sample_data")
+# Cache do store em disco: deixa um worker reciclado pelo Passenger subir PRONTO
+# em ~1s (sem refazer ~15min de busca de API). Resolve o "carregando" recorrente.
+STORE_CACHE = os.path.join(BASE_DIR, "tmp", "store_cache.pkl")
 
 # Colunas canonicas que o resto do app espera encontrar.
 META_COLUMNS = [
@@ -398,12 +402,50 @@ class DataStore:
             self.geo = _coerce_geo(geo_df)
             self.updated_at = datetime.now()
             self.source_label = label
+            self._save_cache()
         return {
             "updated_at": self.updated_at.isoformat(),
             "source": self.source_label,
             "meta_rows": len(self.meta),
             "google_rows": len(self.google),
         }
+
+    def _save_cache(self) -> None:
+        """Persiste o store em disco (best-effort). Chamado dentro do lock no fim
+        do refresh. Escreve em .tmp e faz os.replace (troca atomica)."""
+        try:
+            os.makedirs(os.path.dirname(STORE_CACHE), exist_ok=True)
+            tmp = STORE_CACHE + ".tmp"
+            with open(tmp, "wb") as fh:
+                pickle.dump({
+                    "meta": self.meta, "google": self.google, "geo": self.geo,
+                    "updated_at": self.updated_at, "source_label": self.source_label,
+                }, fh, protocol=pickle.HIGHEST_PROTOCOL)
+            os.replace(tmp, STORE_CACHE)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[cache] falha ao salvar store: {exc}")
+
+    def load_cache(self, max_age_h: float = 36.0) -> bool:
+        """Sobe o store a partir do cache em disco, se houver e nao estiver velho.
+        Deixa o worker pronto instantaneamente apos restart/reciclagem. True se carregou."""
+        try:
+            if not os.path.exists(STORE_CACHE):
+                return False
+            with open(STORE_CACHE, "rb") as fh:
+                data = pickle.load(fh)
+            ts = data.get("updated_at")
+            if not ts or (datetime.now() - ts) > timedelta(hours=max_age_h):
+                return False
+            with self._lock:
+                self.meta = data["meta"]
+                self.google = data["google"]
+                self.geo = data["geo"]
+                self.updated_at = ts
+                self.source_label = data.get("source_label") or "—"
+            return True
+        except Exception as exc:  # noqa: BLE001
+            print(f"[cache] falha ao carregar store: {exc}")
+            return False
 
     def _load_raw(self):
         mode = self.config.get("fonte_dados", "auto")

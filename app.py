@@ -63,11 +63,24 @@ store = DataStore(config)
 
 
 def _initial_load():
-    """Primeira carga em background — nao bloqueia a subida do app (Passenger)."""
+    """Primeira carga em background — nao bloqueia a subida do app (Passenger).
+
+    1) Sobe o store do cache em disco (instantaneo) -> worker reciclado fica PRONTO
+       na hora, sem o "carregando" de ~15min.
+    2) So busca da API se nao havia cache ou se o cache nao e de hoje (evita refetch
+       pesado a cada reciclagem de worker; a atualizacao diaria roda no cron das 8h)."""
     try:
-        info = store.refresh()
-        print(f"[dados] Carregado: {info['source']} "
-              f"(Meta={info['meta_rows']} linhas, Google={info['google_rows']} linhas)")
+        loaded = store.load_cache()
+        if loaded:
+            print(f"[dados] Cache em disco: Meta={len(store.meta)} Google={len(store.google)} "
+                  f"linhas (de {store.updated_at}). Worker pronto.")
+        stale = (store.updated_at is None) or (store.updated_at.date() < datetime.now().date())
+        if not loaded or stale:
+            info = store.refresh()
+            print(f"[dados] Atualizado da API: {info['source']} "
+                  f"(Meta={info['meta_rows']} linhas, Google={info['google_rows']} linhas)")
+        else:
+            print("[dados] Cache de hoje — sem refetch na subida do worker.")
     except Exception as exc:  # noqa: BLE001
         print(f"[dados] carga inicial falhou: {exc}")
 

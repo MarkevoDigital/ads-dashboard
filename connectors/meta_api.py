@@ -13,6 +13,7 @@ Observacoes:
 """
 from __future__ import annotations
 
+import time
 import unicodedata
 from datetime import datetime, timedelta
 
@@ -137,31 +138,41 @@ def _paged_get(url, params):
     return out
 
 
-# Erros da Graph API que indicam "janela/volume grande demais" -> resolver por bisseccao
-# do intervalo de datas (contas com muitos anuncios estouram o limite por requisicao).
-_TOO_MUCH_DATA = ("reduce the amount of data", "error_subcode\":99", "an unknown error")
+# Erros da Graph API que se resolvem dividindo o intervalo de datas (bisseccao): contas
+# com muitos anuncios x dias estouram o limite por requisicao e a Meta devolve mensagens
+# vagas ("reduce the amount of data", "unexpected error", subcodes 99/1504044, code 2).
+_BISECT_HINTS = (
+    "reduce the amount of data", "error_subcode\":99", "an unknown error",
+    "service temporarily unavailable", "1504044", "unexpected error",
+    "ocorreu um erro", "tente novamente",
+)
 
 
-def _is_too_much_data(exc) -> bool:
+def _bisectable(exc) -> bool:
     s = str(exc).lower()
-    return any(t in s for t in _TOO_MUCH_DATA)
+    return any(h in s for h in _BISECT_HINTS)
 
 
 def _insights_windowed(url, params_base, since, until):
-    """Busca /insights para [since, until] dividindo o intervalo ao meio sempre que a
-    Meta responder 'reduce the amount of data' (contas grandes), ate 1 dia por janela.
+    """Busca /insights para [since, until] com resiliencia para contas grandes/instaveis:
+    - tenta a janela; em erro 'grande demais'/instavel, divide o intervalo ao meio
+      (recursivo, ate 1 dia por janela);
+    - numa janela de 1 dia (indivisivel), re-tenta com backoff antes de desistir.
     `params_base` NAO deve conter time_range (e injetado aqui)."""
     params = dict(params_base)
     params["time_range"] = f'{{"since":"{since}","until":"{until}"}}'
-    try:
-        return _paged_get(url, params)
-    except RuntimeError as exc:
-        if since < until and _is_too_much_data(exc):
-            mid = since + (until - since) // 2
-            left = _insights_windowed(url, params_base, since, mid)
-            right = _insights_windowed(url, params_base, mid + timedelta(days=1), until)
-            return left + right
-        raise
+    for attempt in range(3):
+        try:
+            return _paged_get(url, params)
+        except RuntimeError as exc:
+            if since < until and _bisectable(exc):
+                mid = since + (until - since) // 2
+                return (_insights_windowed(url, params_base, since, mid)
+                        + _insights_windowed(url, params_base, mid + timedelta(days=1), until))
+            if attempt < 2:  # janela minima (1 dia) ou erro nao-bissecionavel: backoff e re-tenta
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise
 
 
 def _account_ids(meta_cfg: dict, token: str, version: str) -> list[str]:

@@ -109,7 +109,9 @@ def _build_users():
     for c in clients.get("clientes", []):
         users[c["key"]] = {
             "senha": c.get("senha", ""),
-            "scope": {"meta_ids": c.get("_meta_ids", set()), "google_ids": c.get("_google_ids", set())},
+            "scope": {"meta_ids": c.get("_meta_ids", set()),
+                      "google_ids": c.get("_google_ids", set()),
+                      "tiktok_ids": c.get("_tiktok_ids", set())},
             "nome": c.get("nome", c["key"]),
         }
     return users

@@ -33,14 +33,14 @@ def _digits(v):
 # ----------------------------------------------------------------------------
 # Funil
 # ----------------------------------------------------------------------------
-def _funnel(meta_cur, google_cur) -> dict:
+def _funnel(meta_cur, google_cur, tiktok_cur=None) -> dict:
     """Impressoes -> Cliques -> (cada tipo de conversao com valor no periodo).
 
     Mostra uma etapa por desfecho que o cliente realmente teve no periodo
     (Conversoes, Leads, Conversas, Visitas, Views) — zerados sao omitidos.
     Taxas = razao entre etapas consecutivas (CTR, taxa de conversao, etc.).
     """
-    s = M.sums(meta_cur, google_cur)
+    s = M.sums(meta_cur, google_cur, tiktok_cur)
     clicks = s["clicks"]
     seq = []
     if s["impressions"] > 0:
@@ -78,8 +78,11 @@ def _is_zero(value, fmt) -> bool:
     return round(value, 2) == 0  # currency, ratio, dec
 
 
-def _objective_blocks(meta_cur, google_cur, meta_prev, google_prev) -> list[dict]:
-    objs = sorted(set(meta_cur["objective"]).union(set(google_cur["objective"])))
+def _objective_blocks(meta_cur, google_cur, meta_prev, google_prev,
+                      tiktok_cur=None, tiktok_prev=None) -> list[dict]:
+    tk_objs = set(tiktok_cur["objective"]) if tiktok_cur is not None and not tiktok_cur.empty else set()
+    objs = sorted(set(meta_cur["objective"]).union(set(google_cur["objective"])).union(tk_objs))
+    empty_tk = tiktok_cur.iloc[0:0] if tiktok_cur is not None else None
     blocks = []
     for obj in objs:
         cfg = M.objective_config(obj)
@@ -88,15 +91,17 @@ def _objective_blocks(meta_cur, google_cur, meta_prev, google_prev) -> list[dict
         gc = google_cur[google_cur["objective"] == obj]
         mp = meta_prev[meta_prev["objective"] == obj]
         gp = google_prev[google_prev["objective"] == obj]
-        if mc.empty and gc.empty:
+        tc = tiktok_cur[tiktok_cur["objective"] == obj] if tiktok_cur is not None else empty_tk
+        tp = tiktok_prev[tiktok_prev["objective"] == obj] if tiktok_prev is not None else empty_tk
+        if mc.empty and gc.empty and (tc is None or tc.empty):
             continue
-        spend = round(M.kpi_value(mc, gc, "spend"), 2)
+        spend = round(M.kpi_value(mc, gc, "spend", tc), 2)
         if spend <= 0:
             continue
         # conv_key faz o Google contar no bucket do objetivo (ex.: leads = leads Meta +
         # conversoes Google) — corrige "leads zerados" em contas so-Google.
-        cur = M.compute_kpis(mc, gc, cfg["kpis"], conv_key)
-        prev = M.compute_kpis(mp, gp, cfg["kpis"], conv_key)
+        cur = M.compute_kpis(mc, gc, cfg["kpis"], conv_key, tc)
+        prev = M.compute_kpis(mp, gp, cfg["kpis"], conv_key, tp)
         cards = []
         for key in cfg["kpis"]:
             c = cur[key]
@@ -123,17 +128,19 @@ def _objective_blocks(meta_cur, google_cur, meta_prev, google_prev) -> list[dict
 # ----------------------------------------------------------------------------
 # Serie temporal
 # ----------------------------------------------------------------------------
-def _time_series(meta_cur, google_cur) -> dict:
+def _time_series(meta_cur, google_cur, tiktok_cur=None) -> dict:
     """Evolucao diaria: Investimento (barra) x Cliques e Conversoes (linhas).
 
     Conversoes = soma de todos os desfechos (conversoes + leads + conversas).
     """
-    days = sorted(set(meta_cur["date"]).union(set(google_cur["date"])))
+    tk_days = set(tiktok_cur["date"]) if tiktok_cur is not None and not tiktok_cur.empty else set()
+    days = sorted(set(meta_cur["date"]).union(set(google_cur["date"])).union(tk_days))
     labels, spend_s, clicks_s, conv_s = [], [], [], []
     for d in days:
         md = meta_cur[meta_cur["date"] == d]
         gd = google_cur[google_cur["date"] == d]
-        s = M.sums(md, gd)
+        td = tiktok_cur[tiktok_cur["date"] == d] if tiktok_cur is not None else None
+        s = M.sums(md, gd, td)
         labels.append(_fmt_date(d))
         spend_s.append(round(s["spend"], 2))
         clicks_s.append(int(round(s["clicks"])))
@@ -201,7 +208,8 @@ def _best_ads(meta_cur, limit=6) -> list[dict]:
 def _keywords(google_cur, limit=10) -> list[dict]:
     if google_cur.empty:
         return []
-    g = google_cur[google_cur["keyword"].astype(str).str.strip() != ""]
+    kw = google_cur["keyword"].astype(str).str.strip()
+    g = google_cur[~kw.isin(["", "nan", "NaN", "None"])]
     if g.empty:
         return []
     agg = g.groupby("keyword", dropna=False).agg(
@@ -235,9 +243,12 @@ _META_CONV_COL = {
 }
 
 
-def _campaigns(meta_cur, google_cur) -> list[dict]:
+def _campaigns(meta_cur, google_cur, tiktok_cur=None) -> list[dict]:
     rows = []
-    for plat, df, is_meta in [("Meta", meta_cur, True), ("Google", google_cur, False)]:
+    # TikTok usa o schema do Meta -> agrega como "meta" (is_meta=True).
+    sources = [("Meta", meta_cur, True), ("Google", google_cur, False),
+               ("TikTok", tiktok_cur, True)]
+    for plat, df, is_meta in sources:
         if df is None or df.empty:
             continue
         spend_col = "spend" if is_meta else "cost"
@@ -284,41 +295,42 @@ def _campaigns(meta_cur, google_cur) -> list[dict]:
     return rows
 
 
-def _ads(meta_cur) -> list[dict]:
-    """Anuncios veiculados (Meta), agrupados por nome+campanha. So Meta tem dados por
-    anuncio; o Google e nivel campanha/palavra-chave. Mesmo formato da tabela de campanhas,
-    com a coluna 'campanha' indicando a qual campanha o anuncio pertence."""
-    if meta_cur is None or meta_cur.empty:
-        return []
-    last = meta_cur["date"].max()
+def _ads(meta_cur, tiktok_cur=None) -> list[dict]:
+    """Anuncios veiculados (Meta e TikTok), agrupados por nome+campanha. Meta e TikTok
+    tem dados por anuncio; o Google e nivel campanha/palavra-chave. Mesmo formato da
+    tabela de campanhas, com a coluna 'campanha' indicando a campanha do anuncio."""
     rows = []
-    for (ad, camp), g in meta_cur.groupby(["ad_name", "campaign"], dropna=False):
-        if not str(ad).strip():
+    for plat, df in [("Meta", meta_cur), ("TikTok", tiktok_cur)]:
+        if df is None or df.empty:
             continue
-        impr = float(g["impressions"].sum())
-        if impr <= 0:          # "veiculados" = anuncios que tiveram entrega
-            continue
-        objs = g["objective"].mode()
-        obj = objs.iloc[0] if len(objs) else "outros"
-        cfg = M.objective_config(obj)
-        spend = float(g["spend"].sum())
-        clk = float(g["clicks"].sum())
-        col = _META_CONV_COL.get(cfg.get("conv_key"))
-        conv = float(g[col].sum()) if col and col in g.columns else 0.0
-        gl = g[g["date"] == last] if last is not None else g.iloc[0:0]
-        ativo = bool(len(gl) and (float(gl["spend"].sum()) > 0 or float(gl["impressions"].sum()) > 0))
-        rows.append({
-            "plataforma": "Meta", "anuncio": str(ad), "campanha": str(camp),
-            "objetivo": cfg["label"], "spend": round(spend, 2),
-            "impressions": int(impr), "clicks": int(clk),
-            "ctr": round(clk / impr, 4) if impr else 0.0,
-            "conversions": round(conv, 1),
-            "cpa": round(spend / conv, 2) if conv else 0.0,
-            "video_views": int(g["video_views"].sum()) if "video_views" in g.columns else 0,
-            "profile_visits": int(g["profile_visits"].sum()) if "profile_visits" in g.columns else 0,
-            "engagement": int(g["engagement"].sum()) if "engagement" in g.columns else 0,
-            "ativo": ativo,
-        })
+        last = df["date"].max()
+        for (ad, camp), g in df.groupby(["ad_name", "campaign"], dropna=False):
+            if not str(ad).strip():
+                continue
+            impr = float(g["impressions"].sum())
+            if impr <= 0:          # "veiculados" = anuncios que tiveram entrega
+                continue
+            objs = g["objective"].mode()
+            obj = objs.iloc[0] if len(objs) else "outros"
+            cfg = M.objective_config(obj)
+            spend = float(g["spend"].sum())
+            clk = float(g["clicks"].sum())
+            col = _META_CONV_COL.get(cfg.get("conv_key"))
+            conv = float(g[col].sum()) if col and col in g.columns else 0.0
+            gl = g[g["date"] == last] if last is not None else g.iloc[0:0]
+            ativo = bool(len(gl) and (float(gl["spend"].sum()) > 0 or float(gl["impressions"].sum()) > 0))
+            rows.append({
+                "plataforma": plat, "anuncio": str(ad), "campanha": str(camp),
+                "objetivo": cfg["label"], "spend": round(spend, 2),
+                "impressions": int(impr), "clicks": int(clk),
+                "ctr": round(clk / impr, 4) if impr else 0.0,
+                "conversions": round(conv, 1),
+                "cpa": round(spend / conv, 2) if conv else 0.0,
+                "video_views": int(g["video_views"].sum()) if "video_views" in g.columns else 0,
+                "profile_visits": int(g["profile_visits"].sum()) if "profile_visits" in g.columns else 0,
+                "engagement": int(g["engagement"].sum()) if "engagement" in g.columns else 0,
+                "ativo": ativo,
+            })
     rows.sort(key=lambda r: (r["conversions"], r["spend"]), reverse=True)
     return rows
 
@@ -326,15 +338,18 @@ def _ads(meta_cur) -> list[dict]:
 # ----------------------------------------------------------------------------
 # Geo (mapa de calor)
 # ----------------------------------------------------------------------------
-def _geo(geo_df, scope, start, end, level="estado") -> dict:
+def _geo(geo_df, scope, start, end, level="estado", platform=None) -> dict:
     empty = {"points": [], "max": 0, "cidades": []}
     if geo_df is None or geo_df.empty:
         return empty
     df = geo_df
     if "level" in df.columns:
         df = df[df["level"] == level]
+    if platform is not None and "platform" in df.columns:
+        df = df[df["platform"] == platform]
     if scope is not None:
-        allowed = (scope.get("meta_ids") or set()) | (scope.get("google_ids") or set())
+        allowed = ((scope.get("meta_ids") or set()) | (scope.get("google_ids") or set())
+                   | (scope.get("tiktok_ids") or set()))
         df = df[df["account_id"].astype(str).map(_digits).isin(allowed)]
     # Estados respeitam o periodo; cidades sao um snapshot agregado do periodo de busca
     # (datado em 'until') -> nao se filtra por janela p/ nao zerar fora do dia exato.
@@ -358,34 +373,48 @@ def _geo(geo_df, scope, start, end, level="estado") -> dict:
 # ----------------------------------------------------------------------------
 # Comparativos
 # ----------------------------------------------------------------------------
-def _platform_comparison(meta_cur, google_cur) -> dict:
+def _platform_comparison(meta_cur, google_cur, tiktok_cur=None) -> dict:
     empty_g = pd.DataFrame(columns=["impressions", "clicks", "cost", "conversions", "conversion_value"])
     empty_m = pd.DataFrame(columns=meta_cur.columns)
-    def block(m, g):
+    def block(m, g, t=None):
         return {
-            "spend": round(M.kpi_value(m, g, "spend"), 2),
-            "impressions": int(M.kpi_value(m, g, "impressions")),
-            "clicks": int(M.kpi_value(m, g, "clicks")),
-            "conversions": round(M.kpi_value(m, g, "conversions"), 1),
-            "revenue": round(M.kpi_value(m, g, "revenue"), 2),
-            "cpc": round(M.kpi_value(m, g, "cpc"), 2),
+            "spend": round(M.kpi_value(m, g, "spend", t), 2),
+            "impressions": int(M.kpi_value(m, g, "impressions", t)),
+            "clicks": int(M.kpi_value(m, g, "clicks", t)),
+            "conversions": round(M.kpi_value(m, g, "conversions", t), 1),
+            "revenue": round(M.kpi_value(m, g, "revenue", t), 2),
+            "cpc": round(M.kpi_value(m, g, "cpc", t), 2),
         }
-    return {"meta": block(meta_cur, empty_g), "google": block(empty_m, google_cur)}
+    out = {"meta": block(meta_cur, empty_g), "google": block(empty_m, google_cur)}
+    if tiktok_cur is not None and not tiktok_cur.empty:
+        # TikTok usa schema do Meta -> passa como frame meta vazio + tiktok.
+        out["tiktok"] = block(empty_m, empty_g, tiktok_cur)
+    return out
 
 
-def _investimento(meta_cur, google_cur, meta_prev, google_prev) -> dict:
-    """Gasto do periodo por plataforma + total, com variacao vs periodo anterior."""
+def _investimento(meta_cur, google_cur, meta_prev, google_prev,
+                  tiktok_cur=None, tiktok_prev=None) -> dict:
+    """Gasto do periodo por plataforma + total, com variacao vs periodo anterior.
+    O bucket 'tiktok' so entra quando ha dados TikTok no escopo."""
     eg = pd.DataFrame(columns=["impressions", "clicks", "cost", "conversions", "conversion_value"])
     em = pd.DataFrame(columns=meta_cur.columns)
-    sp = lambda m, g: round(M.kpi_value(m, g, "spend"), 2)
+    sp = lambda m, g, t=None: round(M.kpi_value(m, g, "spend", t), 2)
     meta_a, meta_p = sp(meta_cur, eg), sp(meta_prev, eg)
     goog_a, goog_p = sp(em, google_cur), sp(em, google_prev)
-    tot_a, tot_p = round(meta_a + goog_a, 2), round(meta_p + goog_p, 2)
     blk = lambda a, p: {"atual": a, "anterior": p, "delta_pct": M.pct_change(a, p)}
-    return {"meta": blk(meta_a, meta_p), "google": blk(goog_a, goog_p), "total": blk(tot_a, tot_p)}
+    has_tk = tiktok_cur is not None and not tiktok_cur.empty
+    tik_a = sp(em, eg, tiktok_cur) if has_tk else 0.0
+    tik_p = sp(em, eg, tiktok_prev) if (tiktok_prev is not None and not tiktok_prev.empty) else 0.0
+    tot_a = round(meta_a + goog_a + tik_a, 2)
+    tot_p = round(meta_p + goog_p + tik_p, 2)
+    out = {"meta": blk(meta_a, meta_p), "google": blk(goog_a, goog_p), "total": blk(tot_a, tot_p)}
+    if has_tk:
+        out["tiktok"] = blk(tik_a, tik_p)
+    return out
 
 
-def _period_comparison(meta_cur, google_cur, meta_prev, google_prev, history) -> list[dict]:
+def _period_comparison(meta_cur, google_cur, meta_prev, google_prev, history,
+                       tiktok_cur=None, tiktok_prev=None) -> list[dict]:
     keys = ["spend", "impressions", "clicks", "ctr", "cpc", "conversions",
             "video_views", "profile_visits", "engagement", "revenue", "cpa"]
     out = []
@@ -393,8 +422,8 @@ def _period_comparison(meta_cur, google_cur, meta_prev, google_prev, history) ->
         if M.KPI_CATALOG[key]["base"] not in ("spend", "impressions", "clicks") \
            and history.get(M.KPI_CATALOG[key]["base"], 0) <= 0:
             continue
-        cur = M.kpi_value(meta_cur, google_cur, key)
-        prev = M.kpi_value(meta_prev, google_prev, key)
+        cur = M.kpi_value(meta_cur, google_cur, key, tiktok_cur)
+        prev = M.kpi_value(meta_prev, google_prev, key, tiktok_prev)
         spec = M.KPI_CATALOG[key]
         delta = M.pct_change(cur, prev)
         out.append({
@@ -406,32 +435,71 @@ def _period_comparison(meta_cur, google_cur, meta_prev, google_prev, history) ->
 
 
 # ----------------------------------------------------------------------------
+# Secao dedicada do TikTok (KPIs headline + melhores anuncios + geo)
+# ----------------------------------------------------------------------------
+def _tiktok_section(tiktok_cur, tiktok_prev, geo_df, scope, start, end) -> dict:
+    """Secao propria do TikTok. O investimento e as campanhas/anuncios TikTok ja
+    aparecem combinados (investimento.tiktok + tabelas de campanhas/anuncios); aqui
+    ficam os KPIs de destaque, os melhores anuncios TikTok e o geo TikTok."""
+    eg = pd.DataFrame(columns=["impressions", "clicks", "cost", "conversions", "conversion_value"])
+    em = tiktok_cur.iloc[0:0]
+    headline = []
+    for key in ["spend", "impressions", "clicks", "conversions", "ctr", "cpc"]:
+        spec = M.KPI_CATALOG[key]
+        cur = M.kpi_value(em, eg, key, tiktok_cur)
+        prev = M.kpi_value(em, eg, key, tiktok_prev)
+        delta = M.pct_change(cur, prev)
+        headline.append({
+            "key": key, "label": spec["label"], "fmt": spec["fmt"],
+            "value": round(cur, 4), "delta_pct": delta,
+            "good": M.is_good(spec["dir"], delta),
+        })
+    return {
+        "contas": sorted(set(tiktok_cur["account"])) if not tiktok_cur.empty else [],
+        "kpis": headline,
+        "melhores_anuncios": _best_ads(tiktok_cur),
+        "geo": _geo(geo_df, scope, start, end, "estado", platform="tiktok"),
+    }
+
+
+# ----------------------------------------------------------------------------
 # Orquestrador
 # ----------------------------------------------------------------------------
 def build_payload(store, account="todas", platform="todas", days=30, scope=None,
                   start=None, end=None) -> dict:
     meta, google = store.meta.copy(), store.google.copy()
+    tiktok = store.tiktok.copy() if getattr(store, "tiktok", None) is not None \
+        else pd.DataFrame(columns=meta.columns)
 
     if scope is not None:
         meta_ids = scope.get("meta_ids") or set()
         google_ids = scope.get("google_ids") or set()
+        tiktok_ids = scope.get("tiktok_ids") or set()
         if "account_id" in meta.columns:
             meta = meta[meta["account_id"].astype(str).map(_digits).isin(meta_ids)]
         if "account_id" in google.columns:
             google = google[google["account_id"].astype(str).map(_digits).isin(google_ids)]
+        if "account_id" in tiktok.columns:
+            tiktok = tiktok[tiktok["account_id"].astype(str).map(_digits).isin(tiktok_ids)]
 
-    contas_visiveis = sorted(set(meta["account"]).union(set(google["account"])))
+    contas_visiveis = sorted(set(meta["account"]).union(set(google["account"])).union(set(tiktok["account"])))
 
     if account and account != "todas":
         meta = meta[meta["account"] == account]
         google = google[google["account"] == account]
+        tiktok = tiktok[tiktok["account"] == account]
+
+    # tem_tiktok controla a visibilidade da secao/opcao TikTok no front (data-driven):
+    # so quando o cliente em escopo tem dados TikTok.
+    tem_tiktok = not tiktok.empty
 
     # historico completo (escopo+conta), p/ ocultar metricas sem historico
-    meta_all, google_all = meta.copy(), google.copy()
+    meta_all, google_all, tiktok_all = meta.copy(), google.copy(), tiktok.copy()
 
-    all_dates = list(meta["date"]) + list(google["date"])
+    all_dates = list(meta["date"]) + list(google["date"]) + list(tiktok["date"])
     if not all_dates:
-        return {"vazio": True, "filtros": {"account": account, "platform": platform, "days": days}}
+        return {"vazio": True, "tem_tiktok": tem_tiktok,
+                "filtros": {"account": account, "platform": platform, "days": days}}
 
     # Janela: intervalo explicito (mes/personalizado) tem prioridade sobre "ultimos N dias".
     rng = None
@@ -454,35 +522,48 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
 
     meta_cur, google_cur = _window(meta, start, end), _window(google, start, end)
     meta_prev, google_prev = _window(meta, prev_start, prev_end), _window(google, prev_start, prev_end)
+    tiktok_cur = _window(tiktok, start, end)
+    tiktok_prev = _window(tiktok, prev_start, prev_end)
 
     if platform == "meta":
         google_cur = google_cur.iloc[0:0]; google_prev = google_prev.iloc[0:0]
         google_all = google_all.iloc[0:0]
+        tiktok_cur = tiktok_cur.iloc[0:0]; tiktok_prev = tiktok_prev.iloc[0:0]; tiktok_all = tiktok_all.iloc[0:0]
     elif platform == "google":
         meta_cur = meta_cur.iloc[0:0]; meta_prev = meta_prev.iloc[0:0]
         meta_all = meta_all.iloc[0:0]
+        tiktok_cur = tiktok_cur.iloc[0:0]; tiktok_prev = tiktok_prev.iloc[0:0]; tiktok_all = tiktok_all.iloc[0:0]
+    elif platform == "tiktok":
+        meta_cur = meta_cur.iloc[0:0]; meta_prev = meta_prev.iloc[0:0]; meta_all = meta_all.iloc[0:0]
+        google_cur = google_cur.iloc[0:0]; google_prev = google_prev.iloc[0:0]; google_all = google_all.iloc[0:0]
 
-    history = M.sums(meta_all, google_all)
-    blocks = _objective_blocks(meta_cur, google_cur, meta_prev, google_prev)
+    history = M.sums(meta_all, google_all, tiktok_all)
+    blocks = _objective_blocks(meta_cur, google_cur, meta_prev, google_prev, tiktok_cur, tiktok_prev)
 
-    return {
+    payload = {
         "vazio": False,
+        "tem_tiktok": tem_tiktok,
         "filtros": {"account": account, "platform": platform, "days": days},
         "periodo": {
             "inicio": _fmt_date(start), "fim": _fmt_date(end),
             "anterior_inicio": _fmt_date(prev_start), "anterior_fim": _fmt_date(prev_end),
         },
         "contas": contas_visiveis,
-        "funil": _funnel(meta_cur, google_cur),
-        "investimento": _investimento(meta_cur, google_cur, meta_prev, google_prev),
+        "funil": _funnel(meta_cur, google_cur, tiktok_cur),
+        "investimento": _investimento(meta_cur, google_cur, meta_prev, google_prev, tiktok_cur, tiktok_prev),
         "blocos_objetivo": blocks,
-        "serie_temporal": _time_series(meta_cur, google_cur),
+        "serie_temporal": _time_series(meta_cur, google_cur, tiktok_cur),
         "melhores_anuncios": _best_ads(meta_cur),
         "palavras_chave": _keywords(google_cur),
-        "campanhas": _campaigns(meta_cur, google_cur),
-        "anuncios": _ads(meta_cur),
+        "campanhas": _campaigns(meta_cur, google_cur, tiktok_cur),
+        "anuncios": _ads(meta_cur, tiktok_cur),
         "geo": _geo(store.geo, scope, start, end, "estado"),
         "geo_cidades": _geo(store.geo, scope, start, end, "cidade"),
-        "comparativo_plataforma": _platform_comparison(meta_cur, google_cur),
-        "comparativo_periodo": _period_comparison(meta_cur, google_cur, meta_prev, google_prev, history),
+        "comparativo_plataforma": _platform_comparison(meta_cur, google_cur, tiktok_cur),
+        "comparativo_periodo": _period_comparison(meta_cur, google_cur, meta_prev, google_prev,
+                                                  history, tiktok_cur, tiktok_prev),
     }
+    # Secao dedicada do TikTok (so quando o cliente tem TikTok).
+    if tem_tiktok:
+        payload["tiktok"] = _tiktok_section(tiktok_cur, tiktok_prev, store.geo, scope, start, end)
+    return payload

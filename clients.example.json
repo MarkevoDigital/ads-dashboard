@@ -1,5 +1,6 @@
 {
   "_comentario": "Copie para clients.json e preencha. Cada cliente loga com seu 'key' (usuario) + 'senha' e ve SOMENTE as contas listadas. O login 'admin' (agencia) ve todos. NUNCA versionar clients.json (esta no .gitignore).",
+  "_tiktok": "Opcional por cliente: 'tiktok_advertiser_ids': ['7891234567890']. SO clientes com esse campo veem os dados/secao TikTok (ex.: Bem me Fiz). Os demais nao veem nada de TikTok.",
 
   "admin": {
     "senha": "TROQUE-esta-senha-da-agencia"
@@ -18,7 +19,8 @@
       "nome": "Clínica Sorriso",
       "senha": "TROQUE-senha-do-cliente",
       "meta_ad_account_ids": ["act_111111111111111"],
-      "google_customer_ids": ["1968689935"]
+      "google_customer_ids": ["1968689935"],
+      "tiktok_advertiser_ids": ["7891234567890"]
     }
   ]
 }

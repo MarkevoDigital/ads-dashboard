@@ -141,48 +141,51 @@ def _col(df, c):
     return float(df[c].sum()) if (len(df) and c in df.columns) else 0.0
 
 
-def _sums(meta: pd.DataFrame, google: pd.DataFrame) -> dict:
+def _sums(meta: pd.DataFrame, google: pd.DataFrame, tiktok: pd.DataFrame = None) -> dict:
     m = {c: _col(meta, c) for c in _META_NUM}
     g = {c: _col(google, c) for c in _GOOGLE_NUM}
+    # TikTok usa o MESMO schema do Meta (_META_NUM) -> soma como uma "segunda fonte meta".
+    t = {c: _col(tiktok, c) for c in _META_NUM} if tiktok is not None else {c: 0.0 for c in _META_NUM}
     return {
-        "impressions": m["impressions"] + g["impressions"],
-        "reach": m["reach"],
-        "clicks": m["clicks"] + g["clicks"],
-        "link_clicks": m["link_clicks"] + g["clicks"],
-        "spend": m["spend"] + g["cost"],
-        "messaging": m["messaging_conversations"],
-        "profile_visits": m["profile_visits"],
-        "leads": m["leads"],
-        "site_visits": m["site_visits"],
-        "video_views": m["video_views"] + g["video_views"],
-        "engagement": m["engagement"],
+        "impressions": m["impressions"] + g["impressions"] + t["impressions"],
+        "reach": m["reach"] + t["reach"],
+        "clicks": m["clicks"] + g["clicks"] + t["clicks"],
+        "link_clicks": m["link_clicks"] + g["clicks"] + t["link_clicks"],
+        "spend": m["spend"] + g["cost"] + t["spend"],
+        "messaging": m["messaging_conversations"] + t["messaging_conversations"],
+        "profile_visits": m["profile_visits"] + t["profile_visits"],
+        "leads": m["leads"] + t["leads"],
+        "site_visits": m["site_visits"] + t["site_visits"],
+        "video_views": m["video_views"] + g["video_views"] + t["video_views"],
+        "engagement": m["engagement"] + t["engagement"],
         "interactions": g["interactions"],
-        "conversions": m["purchases"] + g["conversions"],
-        "revenue": m["purchase_value"] + g["conversion_value"],
+        "conversions": m["purchases"] + g["conversions"] + t["purchases"],
+        "revenue": m["purchase_value"] + g["conversion_value"] + t["purchase_value"],
     }
 
 
-def sums(meta, google) -> dict:
-    return _sums(meta, google)
+def sums(meta, google, tiktok=None) -> dict:
+    return _sums(meta, google, tiktok)
 
 
-def sums_for(meta, google, conv_key=None) -> dict:
+def sums_for(meta, google, conv_key=None, tiktok=None) -> dict:
     """Somas ajustadas ao objetivo do bloco.
 
     O Google reporta todos os desfechos em 'conversions'. Em blocos cujo resultado e
     uma conversao especifica (leads, conversas), essas conversoes do Google SAO o
     resultado do objetivo -> contabiliza no bucket certo (ex.: leads = leads do Meta +
     conversoes do Google). Para 'conversions' (vendas) ja esta incluso em _sums.
+    (O TikTok ja roteia sua conversao para a coluna meta certa no conector.)
     """
-    s = _sums(meta, google)
+    s = _sums(meta, google, tiktok)
     if conv_key in ("leads", "messaging"):
         s = dict(s)
         s[conv_key] = s[conv_key] + _col(google, "conversions")
     return s
 
 
-def compute_kpis(meta, google, kpi_keys, conv_key=None) -> dict:
-    s = sums_for(meta, google, conv_key)
+def compute_kpis(meta, google, kpi_keys, conv_key=None, tiktok=None) -> dict:
+    s = sums_for(meta, google, conv_key, tiktok)
     out = {}
     for key in kpi_keys:
         spec = KPI_CATALOG[key]
@@ -193,8 +196,8 @@ def compute_kpis(meta, google, kpi_keys, conv_key=None) -> dict:
     return out
 
 
-def kpi_value(meta, google, key: str) -> float:
-    return KPI_CATALOG[key]["calc"](_sums(meta, google))
+def kpi_value(meta, google, key: str, tiktok=None) -> float:
+    return KPI_CATALOG[key]["calc"](_sums(meta, google, tiktok))
 
 
 def active_keys(history_sums: dict, candidate_keys: list[str]) -> list[str]:

@@ -57,6 +57,12 @@ NUMERIC_GOOGLE = [
 ]
 NUMERIC_GEO = ["lat", "lng", "clicks"]
 
+# TikTok usa o MESMO schema do Meta (mesmas colunas/numericas): assim passa pelos
+# mesmos agregadores (metrics/analytics) sem tratamento especial. So e populado para
+# clientes com tiktok_advertiser_ids; senao fica vazio e o TikTok nao aparece.
+TIKTOK_COLUMNS = META_COLUMNS
+NUMERIC_TIKTOK = NUMERIC_META
+
 
 # ----------------------------------------------------------------------------
 # Config
@@ -78,6 +84,7 @@ def apply_env_overrides(cfg: dict) -> dict:
     """Variaveis de ambiente sobrescrevem o config.json (recomendado em producao)."""
     cfg.setdefault("api", {}).setdefault("meta", {})
     cfg["api"].setdefault("google_ads", {})
+    cfg["api"].setdefault("tiktok", {})
     cfg.setdefault("google_sheets", {})
     cfg.setdefault("auth", {})
     cfg.setdefault("cron", {})
@@ -108,6 +115,18 @@ def apply_env_overrides(cfg: dict) -> dict:
             g[cfg_key] = e[env_key]
     if e.get("GOOGLE_CUSTOMER_IDS"):
         g["customer_ids"] = _split(e["GOOGLE_CUSTOMER_IDS"])
+
+    tk = cfg["api"]["tiktok"]
+    if e.get("TIKTOK_ACCESS_TOKEN"):
+        tk["access_token"] = e["TIKTOK_ACCESS_TOKEN"]
+    if e.get("TIKTOK_APP_ID"):
+        tk["app_id"] = e["TIKTOK_APP_ID"]
+    if e.get("TIKTOK_SECRET"):
+        tk["secret"] = e["TIKTOK_SECRET"]
+    if e.get("TIKTOK_ADVERTISER_IDS"):
+        tk["advertiser_ids"] = _split(e["TIKTOK_ADVERTISER_IDS"])
+    if e.get("TIKTOK_API_VERSION"):
+        tk["api_version"] = e["TIKTOK_API_VERSION"]
 
     gs = cfg["google_sheets"]
     if e.get("META_CSV_URL"):
@@ -152,6 +171,8 @@ def load_clients() -> dict:
     for c in data.get("clientes", []):
         c["_meta_ids"] = {only_digits(x) for x in c.get("meta_ad_account_ids", []) if x}
         c["_google_ids"] = {only_digits(x) for x in c.get("google_customer_ids", []) if x}
+        # TikTok: so clientes com tiktok_advertiser_ids veem dados/secao TikTok.
+        c["_tiktok_ids"] = {only_digits(x) for x in c.get("tiktok_advertiser_ids", []) if x}
     return data
 
 
@@ -389,6 +410,7 @@ class DataStore:
         self.config = config
         self.meta = pd.DataFrame(columns=META_COLUMNS)
         self.google = pd.DataFrame(columns=GOOGLE_COLUMNS)
+        self.tiktok = pd.DataFrame(columns=TIKTOK_COLUMNS)
         self.geo = pd.DataFrame(columns=GEO_COLUMNS)
         self.updated_at: datetime | None = None
         self.source_label = "—"
@@ -396,9 +418,10 @@ class DataStore:
 
     def refresh(self) -> dict:
         with self._lock:
-            meta_df, google_df, geo_df, label = self._load_raw()
+            meta_df, google_df, tiktok_df, geo_df, label = self._load_raw()
             self.meta = _coerce(meta_df, META_COLUMNS, NUMERIC_META)
             self.google = _coerce(google_df, GOOGLE_COLUMNS, NUMERIC_GOOGLE)
+            self.tiktok = _coerce(tiktok_df, TIKTOK_COLUMNS, NUMERIC_TIKTOK)
             self.geo = _coerce_geo(geo_df)
             self.updated_at = datetime.now()
             self.source_label = label
@@ -408,6 +431,7 @@ class DataStore:
             "source": self.source_label,
             "meta_rows": len(self.meta),
             "google_rows": len(self.google),
+            "tiktok_rows": len(self.tiktok),
         }
 
     def _save_cache(self) -> None:
@@ -418,7 +442,8 @@ class DataStore:
             tmp = STORE_CACHE + ".tmp"
             with open(tmp, "wb") as fh:
                 pickle.dump({
-                    "meta": self.meta, "google": self.google, "geo": self.geo,
+                    "meta": self.meta, "google": self.google, "tiktok": self.tiktok,
+                    "geo": self.geo,
                     "updated_at": self.updated_at, "source_label": self.source_label,
                 }, fh, protocol=pickle.HIGHEST_PROTOCOL)
             os.replace(tmp, STORE_CACHE)
@@ -439,6 +464,9 @@ class DataStore:
             with self._lock:
                 self.meta = data["meta"]
                 self.google = data["google"]
+                # retrocompat: pickles antigos (pre-TikTok) nao tem a chave 'tiktok'
+                tk = data.get("tiktok")
+                self.tiktok = tk if tk is not None else pd.DataFrame(columns=TIKTOK_COLUMNS)
                 self.geo = data["geo"]
                 self.updated_at = ts
                 self.source_label = data.get("source_label") or "—"
@@ -452,12 +480,13 @@ class DataStore:
         gs = self.config.get("google_sheets", {})
 
         empty_geo = pd.DataFrame(columns=GEO_COLUMNS)
+        empty_tiktok = pd.DataFrame(columns=TIKTOK_COLUMNS)
 
         def via_service_account():
             return (
                 _read_service_account(self.config, gs.get("aba_meta", "meta_ads")),
                 _read_service_account(self.config, gs.get("aba_google", "google_ads")),
-                empty_geo,
+                empty_tiktok, empty_geo,
                 "Google Sheets (conta de servico)",
             )
 
@@ -465,26 +494,44 @@ class DataStore:
             return (
                 _read_csv_url(gs["meta_csv_url"]),
                 _read_csv_url(gs["google_csv_url"]),
-                empty_geo,
+                empty_tiktok, empty_geo,
                 "Google Sheets (CSV publicado)",
             )
 
         def via_sample():
             meta_path, google_path, geo_path = _ensure_sample_files()
+            meta_sample = pd.read_csv(meta_path)
+            # TikTok de exemplo (so p/ testar a UI): TIKTOK_SAMPLE=1 reaproveita uma fatia
+            # do sample do Meta como um advertiser TikTok ficticio (id 7000000000001).
+            tiktok_sample = empty_tiktok
+            if os.environ.get("TIKTOK_SAMPLE") == "1" and not meta_sample.empty:
+                tk = meta_sample[meta_sample["objective"].isin(["mensagens", "video", "vendas"])].copy()
+                tk["account"] = "TikTok — Loja Bella"
+                tk["account_id"] = "7000000000001"
+                tk["campaign"] = "[TikTok] " + tk["campaign"].astype(str)
+                tiktok_sample = tk
             return (
-                pd.read_csv(meta_path),
+                meta_sample,
                 pd.read_csv(google_path),
-                pd.read_csv(geo_path),
+                tiktok_sample, pd.read_csv(geo_path),
                 "Dados de exemplo",
             )
 
         def via_api():
-            from connectors import meta_api, google_api
+            from connectors import meta_api, google_api, tiktok_api
             api = self.config.get("api", {})
             dias = int(api.get("dias_busca", 60))
             meta_df = meta_api.fetch(api.get("meta", {}), dias)
             google_df = google_api.fetch(api.get("google_ads", {}), dias)
-            if meta_df.empty and google_df.empty:
+            # TikTok: so busca se houver access_token configurado; resiliente (nao derruba
+            # Meta/Google se falhar). Vazio = TikTok nao aparece em lugar nenhum.
+            tiktok_df = empty_tiktok
+            if api.get("tiktok", {}).get("access_token"):
+                try:
+                    tiktok_df = tiktok_api.fetch(api.get("tiktok", {}), dias)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[tiktok] fetch falhou: {exc}")
+            if meta_df.empty and google_df.empty and tiktok_df.empty:
                 raise RuntimeError("API sem dados (verifique tokens/contas).")
             geo_frames = []
             try:
@@ -495,6 +542,11 @@ class DataStore:
                 geo_frames.append(google_api.fetch_geo(api.get("google_ads", {}), dias))
             except Exception as exc:  # noqa: BLE001
                 print(f"[geo] google falhou: {exc}")
+            if api.get("tiktok", {}).get("access_token"):
+                try:
+                    geo_frames.append(tiktok_api.fetch_geo(api.get("tiktok", {}), dias))
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[geo] tiktok falhou: {exc}")
             # Geo por CIDADE (user_location_view) so qun GEO_CIDADE_ON=1: a consulta e
             # pesada/lenta e estava travando o refresh sincrono. Mantido opcional ate
             # migrar para carga assincrona/cacheada.
@@ -505,11 +557,15 @@ class DataStore:
                     print(f"[geo-cidade] google falhou: {exc}")
             geo_frames = [g for g in geo_frames if g is not None and len(g)]
             geo_df = pd.concat(geo_frames, ignore_index=True) if geo_frames else empty_geo
-            return meta_df, google_df, geo_df, "API (Meta + Google Ads)"
+            label = "API (Meta + Google Ads)"
+            if not tiktok_df.empty:
+                label = "API (Meta + Google + TikTok Ads)"
+            return meta_df, google_df, tiktok_df, geo_df, label
 
         api_cfg = self.config.get("api", {})
         has_api = bool(api_cfg.get("meta", {}).get("access_token")
-                       or api_cfg.get("google_ads", {}).get("refresh_token"))
+                       or api_cfg.get("google_ads", {}).get("refresh_token")
+                       or api_cfg.get("tiktok", {}).get("access_token"))
 
         if mode == "api":
             return via_api()

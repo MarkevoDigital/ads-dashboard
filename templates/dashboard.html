@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard de Ads — Meta + Google</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=13">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=14">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -108,6 +108,15 @@
       <div id="ads-wrap" class="table-wrap"></div>
     </section>
 
+    <!-- Seção dedicada TikTok Ads (aparece SÓ para clientes com TikTok) -->
+    <section class="card hidden" id="tiktok-section">
+      <h2>🎵 TikTok Ads</h2>
+      <p class="hint">Desempenho do TikTok no período (também já somado aos totais e gráficos acima).</p>
+      <div id="tiktok-kpis" class="kpi-grid tk-kpis"></div>
+      <h3 class="tk-sub">🏆 Melhores anúncios do TikTok</h3>
+      <div id="tiktok-best-ads" class="ads-grid"></div>
+    </section>
+
     <div class="two-col">
       <section class="card">
         <h2>🔑 Palavras-chave (Google Ads)</h2>
@@ -138,6 +147,6 @@
   <div id="loading" class="loading hidden">Carregando…</div>
   <footer class="foot">Atualização automática diária · Meta Ads + Google Ads</footer>
 
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=13"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=14"></script>
 </body>
 </html>

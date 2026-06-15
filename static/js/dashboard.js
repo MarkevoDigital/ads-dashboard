@@ -108,6 +108,7 @@
       $("keywords-wrap").innerHTML = ""; $("campaigns-wrap").innerHTML = "";
       $("ads-wrap").innerHTML = "";
       $("geo-section").classList.add("hidden");
+      $("tiktok-section").classList.add("hidden");
       return;
     }
 
@@ -124,10 +125,15 @@
     renderTrend(data.serie_temporal);
     renderBestAds(data.melhores_anuncios);
     renderAds(data.anuncios);
-    // Anúncios (melhores + tabela) são do Meta -> ocultar quando o filtro é "Somente Google".
-    const soGoogle = (data.filtros || {}).platform === "google";
-    $("best-ads-section").classList.toggle("hidden", soGoogle);
-    $("ads-table-section").classList.toggle("hidden", soGoogle);
+    // TikTok: opção no seletor de plataforma + seção dedicada (data-driven: só p/ clientes
+    // com TikTok). ensurePlatformOption insere/remove a opção conforme tem_tiktok.
+    ensurePlatformOption(!!data.tem_tiktok);
+    const plat = (data.filtros || {}).platform;
+    // Melhores anúncios (Meta) e Anúncios veiculados: ocultar em "Somente Google".
+    // Em "Somente TikTok" os melhores do Meta somem; a tabela de anúncios mostra TikTok.
+    $("best-ads-section").classList.toggle("hidden", plat === "google" || plat === "tiktok");
+    $("ads-table-section").classList.toggle("hidden", plat === "google");
+    renderTikTok(data, plat);
     renderCampaigns(data.campanhas);
     renderKeywords(data.palavras_chave);
     renderPlatform(data.comparativo_plataforma);
@@ -189,7 +195,58 @@
     };
     wrap.innerHTML = card("Meta Ads", "iv-meta", inv.meta)
       + card("Google Ads", "iv-google", inv.google)
+      + (inv.tiktok ? card("TikTok Ads", "iv-tiktok", inv.tiktok) : "")
       + card("Total", "iv-total", inv.total);
+  }
+
+  // ---- TikTok: opção de plataforma (insere/remove conforme o cliente tem TikTok) ----
+  function ensurePlatformOption(hasTikTok) {
+    const sel = $("f-platform");
+    const combined = sel.querySelector('option[value="todas"]');
+    let opt = sel.querySelector('option[value="tiktok"]');
+    if (hasTikTok) {
+      if (combined) combined.textContent = "Meta + Google + TikTok";
+      if (!opt) {
+        opt = document.createElement("option");
+        opt.value = "tiktok"; opt.textContent = "Somente TikTok";
+        sel.appendChild(opt);
+      }
+    } else {
+      if (combined) combined.textContent = "Meta + Google";
+      if (opt) {
+        if (sel.value === "tiktok") { sel.value = "todas"; }
+        opt.remove();
+      }
+    }
+  }
+
+  // ---- TikTok: seção dedicada (KPIs de destaque + melhores anúncios do TikTok) ----
+  function renderTikTok(data, plat) {
+    const sec = $("tiktok-section");
+    const tk = data.tiktok;
+    // Mostra só quando o cliente tem TikTok e o filtro não está em Meta/Google.
+    if (!data.tem_tiktok || !tk || plat === "meta" || plat === "google") {
+      sec.classList.add("hidden"); return;
+    }
+    sec.classList.remove("hidden");
+    $("tiktok-kpis").innerHTML = (tk.kpis || []).map((c) => `
+      <div class="kpi">
+        <div class="k-label">${c.label}</div>
+        <div class="k-value">${fmt(c.value, c.fmt)}</div>
+        ${deltaHtml(c.delta_pct, c.good)}
+      </div>`).join("");
+    const ads = tk.melhores_anuncios || [];
+    $("tiktok-best-ads").innerHTML = ads.length
+      ? ads.map((a, i) => `
+        <div class="ad-card" style="position:relative">
+          <div class="rank-badge">${i + 1}</div>
+          <div class="ad-body">
+            <div class="ad-name">${a.ad_name}</div>
+            <div class="ad-tag">${a.account} · ${a.objective_label}</div>
+            <div class="ad-metric">${fmt(a.result_value, a.result_fmt)}<small>${a.result_label}</small></div>
+            <div class="ad-sub">${a.eff_label}: ${fmt(a.eff_value, a.eff_fmt)} · Invest.: ${fmt(a.spend, "currency")} · CTR ${fmt(a.ctr, "pct")} · ${fmt(a.impressions, "int")} impr.</div>
+          </div></div>`).join("")
+      : `<div class="empty">Sem anúncios TikTok com investimento relevante no período.</div>`;
   }
 
   // ---- Comentario unico ----
@@ -313,25 +370,27 @@
   // ---- Comparativo de plataforma ----
   function renderPlatform(cp) {
     if (!cp) return;
-    const m = cp.meta, g = cp.google;
+    const m = cp.meta, g = cp.google, t = cp.tiktok;  // t presente só quando há TikTok
+    const th = `<th>Meta</th><th>Google</th>${t ? "<th>TikTok</th>" : ""}`;
+    const cells = (key, kind) => `<td>${fmt(m[key], kind)}</td><td>${fmt(g[key], kind)}</td>` +
+      (t ? `<td>${fmt(t[key], kind)}</td>` : "");
     $("platform-table").innerHTML = `<table>
-      <thead><tr><th>Métrica</th><th>Meta</th><th>Google</th></tr></thead><tbody>
-        <tr><td>Investimento</td><td>${fmt(m.spend, "currency")}</td><td>${fmt(g.spend, "currency")}</td></tr>
-        <tr><td>Cliques</td><td>${fmt(m.clicks, "int")}</td><td>${fmt(g.clicks, "int")}</td></tr>
-        <tr><td>Conversões</td><td>${fmt(m.conversions, "int")}</td><td>${fmt(g.conversions, "int")}</td></tr>
-        <tr><td>CPC</td><td>${fmt(m.cpc, "currency")}</td><td>${fmt(g.cpc, "currency")}</td></tr>
+      <thead><tr><th>Métrica</th>${th}</tr></thead><tbody>
+        <tr><td>Investimento</td>${cells("spend", "currency")}</tr>
+        <tr><td>Cliques</td>${cells("clicks", "int")}</tr>
+        <tr><td>Conversões</td>${cells("conversions", "int")}</tr>
+        <tr><td>CPC</td>${cells("cpc", "currency")}</tr>
       </tbody></table>`;
     const ctx = $("platform-chart");
     if (platformChart) platformChart.destroy();
+    const datasets = [
+      { label: "Meta", data: [m.spend, m.clicks, m.conversions], backgroundColor: "#5b8cff" },
+      { label: "Google", data: [g.spend, g.clicks, g.conversions], backgroundColor: "#2ecc8f" },
+    ];
+    if (t) datasets.push({ label: "TikTok", data: [t.spend, t.clicks, t.conversions], backgroundColor: "#ff4d67" });
     platformChart = new Chart(ctx, {
       type: "bar",
-      data: {
-        labels: ["Investimento", "Cliques", "Conversões"],
-        datasets: [
-          { label: "Meta", data: [m.spend, m.clicks, m.conversions], backgroundColor: "#5b8cff" },
-          { label: "Google", data: [g.spend, g.clicks, g.conversions], backgroundColor: "#2ecc8f" },
-        ],
-      },
+      data: { labels: ["Investimento", "Cliques", "Conversões"], datasets },
       options: baseOpts({ stacked: false }),
     });
   }

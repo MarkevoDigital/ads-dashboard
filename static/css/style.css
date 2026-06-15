@@ -149,11 +149,12 @@ tbody tr:hover { background: var(--panel-2); }
 }
 .geo-tab.active { background: var(--brand); color: #fff; border-color: transparent; }
 /* Seção Investimento (Meta / Google / Total) */
-.invest-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.invest-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
 .invest-card { background: var(--panel-2); border: 1px solid var(--line);
   border-left: 4px solid var(--brand); border-radius: 10px; padding: 14px 16px; }
 .invest-card.iv-meta { border-left-color: #5b8cff; }
 .invest-card.iv-google { border-left-color: #2ecc8f; }
+.invest-card.iv-tiktok { border-left-color: #ff4d67; }
 .invest-card.iv-total { border-left-color: #ffb547; background: rgba(255,181,71,.06); }
 .iv-label { color: var(--muted); font-size: 12px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .3px; }
@@ -203,6 +204,10 @@ tbody tr:hover { background: var(--panel-2); }
 .plat { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; color: #fff; }
 .plat.meta { background: #5b8cff; }
 .plat.google { background: #2ecc8f; }
+.plat.tiktok { background: #ff4d67; }
+.tk-sub { margin: 18px 0 8px; font-size: 15px; color: var(--txt); }
+.tk-kpis { margin-top: 4px; }
+#tiktok-section { border-left: 4px solid #ff4d67; }
 
 /* ---- Mapa de calor ---- */
 .geo-map { height: 460px; width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }

@@ -24,6 +24,17 @@
       "customer_ids": [],
       "_objetivo": "opcional: nome_da_campanha -> objetivo (vendas/leads/...)",
       "campaign_objective_map": {}
+    },
+    "tiktok": {
+      "_comentario": "TikTok Ads (Marketing API). So aparece p/ clientes com tiktok_advertiser_ids no clients.json. Prefira variaveis de ambiente: TIKTOK_ACCESS_TOKEN / TIKTOK_APP_ID / TIKTOK_SECRET / TIKTOK_ADVERTISER_IDS.",
+      "access_token": "",
+      "app_id": "",
+      "secret": "",
+      "_advertiser_ids": "deixe vazio p/ descobrir os advertisers autorizados (precisa app_id+secret)",
+      "advertiser_ids": [],
+      "api_version": "v1.3",
+      "_objective_map": "opcional: sobrescreve objective_type TikTok -> nosso bucket",
+      "objective_map": {}
     }
   },
 

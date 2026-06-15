@@ -137,6 +137,33 @@ def _paged_get(url, params):
     return out
 
 
+# Erros da Graph API que indicam "janela/volume grande demais" -> resolver por bisseccao
+# do intervalo de datas (contas com muitos anuncios estouram o limite por requisicao).
+_TOO_MUCH_DATA = ("reduce the amount of data", "error_subcode\":99", "an unknown error")
+
+
+def _is_too_much_data(exc) -> bool:
+    s = str(exc).lower()
+    return any(t in s for t in _TOO_MUCH_DATA)
+
+
+def _insights_windowed(url, params_base, since, until):
+    """Busca /insights para [since, until] dividindo o intervalo ao meio sempre que a
+    Meta responder 'reduce the amount of data' (contas grandes), ate 1 dia por janela.
+    `params_base` NAO deve conter time_range (e injetado aqui)."""
+    params = dict(params_base)
+    params["time_range"] = f'{{"since":"{since}","until":"{until}"}}'
+    try:
+        return _paged_get(url, params)
+    except RuntimeError as exc:
+        if since < until and _is_too_much_data(exc):
+            mid = since + (until - since) // 2
+            left = _insights_windowed(url, params_base, since, mid)
+            right = _insights_windowed(url, params_base, mid + timedelta(days=1), until)
+            return left + right
+        raise
+
+
 def _account_ids(meta_cfg: dict, token: str, version: str) -> list[str]:
     """IDs das contas configuradas; se vazio/placeholder, descobre via /me/adaccounts."""
     ids = []
@@ -165,7 +192,7 @@ def _thumbnails(account_id, token, version) -> dict:
     url = f"{GRAPH}/{version}/{account_id}/ads"
     params = {
         "fields": "id,preview_shareable_link,creative{thumbnail_url,image_url}",
-        "limit": 500,
+        "limit": 100,  # paginas menores: contas grandes estouram 'reduce the amount of data'
         "access_token": token,
     }
     mapa = {}
@@ -241,7 +268,6 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
     url = f"{GRAPH}/{version}/{account_id}/insights"
     params = {
         "level": "ad", "time_increment": 1,
-        "time_range": f'{{"since":"{since}","until":"{until}"}}',
         "fields": ",".join([
             "ad_id", "ad_name", "adset_name", "campaign_id", "campaign_name", "objective",
             "account_name", "impressions", "reach", "frequency", "clicks",
@@ -250,7 +276,7 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
         "limit": 500, "access_token": token,
     }
     out = []
-    for r in _paged_get(url, params):
+    for r in _insights_windowed(url, params, since, until):
         actions = r.get("actions", [])
         action_values = r.get("action_values", [])
         msg = _first_action(actions, ACTION_KEYS["messaging_conversations"])
@@ -302,11 +328,10 @@ def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
         url = f"{GRAPH}/{version}/{account_id}/insights"
         params = {
             "level": "account", "breakdowns": "region", "time_increment": 1,
-            "time_range": f'{{"since":"{since}","until":"{until}"}}',
             "fields": "clicks", "limit": 500, "access_token": token,
         }
         try:
-            for r in _paged_get(url, params):
+            for r in _insights_windowed(url, params, since, until):
                 match = _STATE_BY_NORM.get(_norm_state(r.get("region", "")))
                 if not match:
                     continue

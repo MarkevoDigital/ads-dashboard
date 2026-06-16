@@ -182,6 +182,18 @@ def index():
     return render_template("dashboard.html")
 
 
+@app.route("/logout")
+def logout():
+    """Sempre 401. O front faz um XHR aqui com credenciais invalidas para que o
+    navegador troque o basic-auth em cache e volte a pedir login (entrar como outro
+    cliente). Sem usuarios configurados (dev), apenas redireciona para a home."""
+    if not USERS:
+        return Response('<meta http-equiv="refresh" content="0;url=/">', 200,
+                        {"Content-Type": "text/html"})
+    return Response("Sessão encerrada.", 401,
+                    {"WWW-Authenticate": 'Basic realm="Dashboard de Ads"'})
+
+
 @app.route("/api/data")
 @requires_auth
 def api_data():

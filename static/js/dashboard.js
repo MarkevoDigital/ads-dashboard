@@ -514,6 +514,21 @@
     await load();
   });
 
+  // ---- Sair (logout do HTTP Basic Auth) ----
+  // Um XHR com credenciais propositalmente inválidas faz o navegador descartar o
+  // login salvo; ao recarregar, ele volta a pedir usuário/senha (entrar como outro cliente).
+  $("f-logout") && $("f-logout").addEventListener("click", () => {
+    if (!confirm("Sair do dashboard e entrar com outro acesso?")) return;
+    const done = () => window.location.replace("/");
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", "/logout", true, "sair", "sair-" + Date.now());
+      xhr.onreadystatechange = () => { if (xhr.readyState === 4) done(); };
+      xhr.onerror = done;
+      xhr.send();
+    } catch (e) { done(); }
+  });
+
   // ---- Exportar a visualização em PDF ----
   $("f-pdf").addEventListener("click", () => {
     const btn = $("f-pdf");

@@ -132,25 +132,32 @@ def _advertiser_names(adv_ids: list[str], token: str, version: str) -> dict:
 
 
 def _report_rows(advertiser_id: str, token: str, version: str, since, until) -> list[dict]:
-    """Itera todas as paginas de report/integrated/get (nivel anuncio, por dia)."""
-    out, page = [], 1
-    while True:
-        params = {
-            "advertiser_id": advertiser_id,
-            "report_type": "BASIC",
-            "data_level": "AUCTION_AD",
-            "dimensions": json.dumps(["ad_id", "stat_time_day"]),
-            "metrics": json.dumps(_METRICS),
-            "start_date": str(since), "end_date": str(until),
-            "page": page, "page_size": 1000,
-        }
-        data = _get("report/integrated/get", params, token, version)
-        out.extend(data.get("list", []))
-        info = data.get("page_info", {}) or {}
-        total_page = info.get("total_page") or 1
-        if page >= total_page:
-            break
-        page += 1
+    """Itera report/integrated/get (nivel anuncio, por dia), paginando.
+    O TikTok limita o relatorio por stat_time_day a 30 dias por requisicao (code 40002)
+    -> fatiamos o intervalo em janelas de ate 30 dias e concatenamos."""
+    out = []
+    win_start = since
+    while win_start <= until:
+        win_end = min(win_start + timedelta(days=29), until)
+        page = 1
+        while True:
+            params = {
+                "advertiser_id": advertiser_id,
+                "report_type": "BASIC",
+                "data_level": "AUCTION_AD",
+                "dimensions": json.dumps(["ad_id", "stat_time_day"]),
+                "metrics": json.dumps(_METRICS),
+                "start_date": str(win_start), "end_date": str(win_end),
+                "page": page, "page_size": 1000,
+            }
+            data = _get("report/integrated/get", params, token, version)
+            out.extend(data.get("list", []))
+            info = data.get("page_info", {}) or {}
+            total_page = info.get("total_page") or 1
+            if page >= total_page:
+                break
+            page += 1
+        win_start = win_end + timedelta(days=1)
     return out
 
 

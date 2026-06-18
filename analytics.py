@@ -514,7 +514,11 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         start, end = rng
         win = (end - start).days + 1
     else:
-        end = max(all_dates)
+        # "Ultimos N dias" termina em ONTEM (exclui o dia de hoje), igual as plataformas de
+        # anuncio (Meta/Google contam de ontem p/ tras). Limita ao ultimo dia COM dados,
+        # p/ nao exibir dias finais vazios caso o cache esteja atrasado.
+        ontem = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
+        end = min(ontem, max(all_dates))
         start = end - pd.Timedelta(days=days - 1)
         win = days
     prev_end = start - pd.Timedelta(days=1)

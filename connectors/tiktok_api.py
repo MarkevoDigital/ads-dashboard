@@ -17,6 +17,7 @@ o funil/blocos por objetivo/melhores anuncios funcionarem de imediato.
 from __future__ import annotations
 
 import json
+import socket
 import time
 from datetime import datetime, timedelta
 
@@ -24,6 +25,48 @@ import pandas as pd
 import requests
 
 BASE = "https://business-api.tiktok.com/open_api"
+_API_HOST = "business-api.tiktok.com"
+_dns_ready = False
+
+
+def _ensure_dns() -> None:
+    """Garante que `business-api.tiktok.com` seja resolvivel.
+
+    Alguns servidores (ex.: o resolver da ValueServer no us172) retornam NXDOMAIN
+    para esse dominio, mesmo ele existindo. Quando o DNS do sistema falha, resolvemos
+    via DNS-over-HTTPS (Cloudflare 1.1.1.1, acessado por IP) e fixamos o IP no
+    socket.getaddrinfo. O hostname original e preservado, entao SNI/Host/cert continuam
+    corretos. Idempotente e inofensivo em servidores com DNS saudavel (vira no-op)."""
+    global _dns_ready
+    if _dns_ready:
+        return
+    try:
+        socket.getaddrinfo(_API_HOST, 443)
+        _dns_ready = True
+        return
+    except socket.gaierror:
+        pass
+    try:
+        resp = requests.get("https://1.1.1.1/dns-query",
+                            params={"name": _API_HOST, "type": "A"},
+                            headers={"Accept": "application/dns-json"}, timeout=15)
+        ips = [a["data"] for a in resp.json().get("Answer", []) if a.get("type") == 1]
+        if not ips:
+            print(f"[tiktok] DoH nao retornou IP para {_API_HOST}; DNS continua quebrado.")
+            return
+        ip = ips[0]
+        _orig = socket.getaddrinfo
+
+        def _patched(host, *args, **kwargs):
+            if host == _API_HOST:
+                return _orig(ip, *args, **kwargs)
+            return _orig(host, *args, **kwargs)
+
+        socket.getaddrinfo = _patched
+        _dns_ready = True
+        print(f"[tiktok] DNS do sistema falhou para {_API_HOST}; usando DoH -> {ip}.")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[tiktok] fallback DoH falhou: {exc}")
 
 # Objetivo (objective_type da campanha no TikTok) -> bucket do dashboard.
 DEFAULT_OBJECTIVE_MAP = {
@@ -213,6 +256,7 @@ def fetch(tiktok_cfg: dict, days: int = 60) -> pd.DataFrame:
     token = tiktok_cfg.get("access_token")
     if not token:
         return pd.DataFrame()
+    _ensure_dns()
     version = tiktok_cfg.get("api_version", "v1.3")
     obj_map = {**DEFAULT_OBJECTIVE_MAP, **(tiktok_cfg.get("objective_map") or {})}
     until = datetime.today().date()

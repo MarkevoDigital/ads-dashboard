@@ -111,6 +111,13 @@ def _num(v) -> float:
         return 0.0
 
 
+def _https(url) -> str:
+    """Forca https (o TikTok devolve video_cover_url como http://, o que vira mixed
+    content e e bloqueado pelo navegador no dashboard https). O CDN aceita https."""
+    u = str(url or "")
+    return "https://" + u[7:] if u.startswith("http://") else u
+
+
 def _get(path: str, params: dict, token: str, version: str) -> dict:
     """GET na Graph do TikTok. Erro != code 0 vira RuntimeError. Com retry para
     instabilidades transitorias (code 50002/'rate'/'timeout')."""
@@ -242,8 +249,8 @@ def _video_assets(advertiser_id: str, token: str, version: str, video_ids) -> di
         for it in data.get("list", []):
             vid = str(it.get("video_id") or "")
             if vid:
-                out[vid] = {"thumb": it.get("video_cover_url") or "",
-                            "link": it.get("preview_url") or ""}
+                out[vid] = {"thumb": _https(it.get("video_cover_url")),
+                            "link": _https(it.get("preview_url"))}
     return out
 
 

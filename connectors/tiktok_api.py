@@ -174,6 +174,79 @@ def _advertiser_names(adv_ids: list[str], token: str, version: str) -> dict:
     return names
 
 
+def _ad_meta(advertiser_id: str, token: str, version: str) -> dict:
+    """ad_id -> {campaign_id, video_id} (liga o relatorio ao orcamento e ao criativo).
+    Best-effort: se faltar permissao, devolve {} e o dashboard segue sem thumb/orcamento."""
+    out = {}
+    page = 1
+    try:
+        while True:
+            data = _get("ad/get", {
+                "advertiser_id": advertiser_id,
+                "fields": json.dumps(["ad_id", "campaign_id", "video_id"]),
+                "page": page, "page_size": 100,
+            }, token, version)
+            for it in data.get("list", []):
+                out[str(it.get("ad_id"))] = {
+                    "campaign_id": str(it.get("campaign_id") or ""),
+                    "video_id": str(it.get("video_id") or ""),
+                }
+            info = data.get("page_info", {}) or {}
+            if page >= (info.get("total_page") or 1):
+                break
+            page += 1
+    except Exception as exc:  # noqa: BLE001
+        print(f"[tiktok] ad/get (metadados) indisponivel: {exc}")
+    return out
+
+
+def _campaign_daily_budget(advertiser_id: str, token: str, version: str) -> dict:
+    """campaign_id -> orcamento diario. Sem CBO o orcamento do TikTok fica no ad group
+    (budget_mode BUDGET_MODE_*DAILY*); somamos os ad groups por campanha. Best-effort."""
+    out = {}
+    page = 1
+    try:
+        while True:
+            data = _get("adgroup/get", {
+                "advertiser_id": advertiser_id,
+                "fields": json.dumps(["campaign_id", "budget", "budget_mode"]),
+                "page": page, "page_size": 100,
+            }, token, version)
+            for it in data.get("list", []):
+                cid = str(it.get("campaign_id") or "")
+                if cid and "DAILY" in str(it.get("budget_mode") or "").upper():
+                    out[cid] = out.get(cid, 0.0) + _num(it.get("budget"))
+            info = data.get("page_info", {}) or {}
+            if page >= (info.get("total_page") or 1):
+                break
+            page += 1
+    except Exception as exc:  # noqa: BLE001
+        print(f"[tiktok] adgroup/get (orcamento) indisponivel: {exc}")
+    return out
+
+
+def _video_assets(advertiser_id: str, token: str, version: str, video_ids) -> dict:
+    """video_id -> {thumb, link}. thumb = video_cover_url (URL estavel da capa);
+    link = preview_url (reproduz o video; expira, mas o seed diario renova). Best-effort."""
+    out = {}
+    ids = [v for v in dict.fromkeys(video_ids) if v]
+    for i in range(0, len(ids), 60):
+        chunk = ids[i:i + 60]
+        try:
+            data = _get("file/video/ad/info", {
+                "advertiser_id": advertiser_id, "video_ids": json.dumps(chunk),
+            }, token, version)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[tiktok] file/video/ad/info indisponivel: {exc}")
+            break
+        for it in data.get("list", []):
+            vid = str(it.get("video_id") or "")
+            if vid:
+                out[vid] = {"thumb": it.get("video_cover_url") or "",
+                            "link": it.get("preview_url") or ""}
+    return out
+
+
 def _report_rows(advertiser_id: str, token: str, version: str, since, until) -> list[dict]:
     """Itera report/integrated/get (nivel anuncio, por dia), paginando.
     O TikTok limita o relatorio por stat_time_day a 30 dias por requisicao (code 40002)
@@ -204,7 +277,11 @@ def _report_rows(advertiser_id: str, token: str, version: str, since, until) -> 
     return out
 
 
-def _fetch_advertiser_rows(advertiser_id, adv_name, token, version, since, until, obj_map) -> list[dict]:
+def _fetch_advertiser_rows(advertiser_id, adv_name, token, version, since, until, obj_map,
+                           ad_meta=None, budget_by_campaign=None, video_assets=None) -> list[dict]:
+    ad_meta = ad_meta or {}
+    budget_by_campaign = budget_by_campaign or {}
+    video_assets = video_assets or {}
     rows = []
     for item in _report_rows(advertiser_id, token, version, since, until):
         dim = item.get("dimensions", {}) or {}
@@ -212,6 +289,8 @@ def _fetch_advertiser_rows(advertiser_id, adv_name, token, version, since, until
         day = str(dim.get("stat_time_day", ""))[:10]
         if not day:
             continue
+        meta_ad = ad_meta.get(str(dim.get("ad_id", "")), {})
+        asset = video_assets.get(meta_ad.get("video_id", ""), {})
         objective_type = str(met.get("objective_type", "")).upper()
         bucket = obj_map.get(objective_type, "outros")
         conversion = _num(met.get("conversion"))
@@ -224,8 +303,9 @@ def _fetch_advertiser_rows(advertiser_id, adv_name, token, version, since, until
             "campaign": met.get("campaign_name", "") or "",
             "adset": met.get("adgroup_name", "") or "",
             "ad_name": met.get("ad_name", "") or "",
-            "ad_thumbnail_url": "", "ad_permalink": "",
-            "daily_budget": 0.0,
+            "ad_thumbnail_url": asset.get("thumb", ""),
+            "ad_permalink": asset.get("link", ""),
+            "daily_budget": budget_by_campaign.get(meta_ad.get("campaign_id", ""), 0.0),
             "impressions": _num(met.get("impressions")),
             "reach": _num(met.get("reach")),
             "frequency": _num(met.get("frequency")),
@@ -267,8 +347,13 @@ def fetch(tiktok_cfg: dict, days: int = 60) -> pd.DataFrame:
     rows = []
     for adv in adv_ids:
         try:
+            ad_meta = _ad_meta(adv, token, version)
+            budget_by_campaign = _campaign_daily_budget(adv, token, version)
+            assets = _video_assets(adv, token, version,
+                                   [m.get("video_id") for m in ad_meta.values()])
             rows.extend(_fetch_advertiser_rows(adv, names.get(adv, adv), token, version,
-                                               since, until, obj_map))
+                                               since, until, obj_map,
+                                               ad_meta, budget_by_campaign, assets))
         except Exception as exc:  # noqa: BLE001
             print(f"[tiktok] advertiser {adv} falhou (ignorado): {exc}")
     return pd.DataFrame(rows)

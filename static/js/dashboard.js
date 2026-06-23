@@ -237,15 +237,25 @@
       </div>`).join("");
     const ads = tk.melhores_anuncios || [];
     $("tiktok-best-ads").innerHTML = ads.length
-      ? ads.map((a, i) => `
+      ? ads.map((a, i) => {
+        const link = a.permalink || "";
+        const img = a.thumbnail
+          ? `<img class="thumb" src="${a.thumbnail}" alt="Print do anuncio" loading="lazy" onerror="this.style.display='none'">`
+          : "";
+        const thumb = link && img ? `<a href="${link}" target="_blank" rel="noopener" title="Abrir anúncio">${img}</a>` : img;
+        const verLink = link ? `<a class="ad-link" href="${link}" target="_blank" rel="noopener">Ver anúncio ↗</a>` : "";
+        return `
         <div class="ad-card" style="position:relative">
           <div class="rank-badge">${i + 1}</div>
+          ${thumb}
           <div class="ad-body">
             <div class="ad-name">${a.ad_name}</div>
             <div class="ad-tag">${a.account} · ${a.objective_label}</div>
             <div class="ad-metric">${fmt(a.result_value, a.result_fmt)}<small>${a.result_label}</small></div>
             <div class="ad-sub">${a.eff_label}: ${fmt(a.eff_value, a.eff_fmt)} · Invest.: ${fmt(a.spend, "currency")} · CTR ${fmt(a.ctr, "pct")} · ${fmt(a.impressions, "int")} impr.</div>
-          </div></div>`).join("")
+            ${verLink}
+          </div></div>`;
+      }).join("")
       : `<div class="empty">Sem anúncios TikTok com investimento relevante no período.</div>`;
   }
 

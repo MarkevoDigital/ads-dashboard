@@ -80,12 +80,18 @@ def _spawn_seed() -> bool:
         if p is not None and p.poll() is None:
             return False  # ja ha um seed em andamento
         try:
+            # nice(19) = baixa prioridade de CPU: o worker web tem preferencia e o
+            # dashboard segue responsivo mesmo durante o seed (~10min). preexec_fn so
+            # existe em POSIX; no Windows (dev) cai no except e roda sem nice.
+            kwargs = {}
+            if hasattr(os, "nice"):
+                kwargs["preexec_fn"] = lambda: os.nice(19)
             _seed_proc[0] = subprocess.Popen(
                 [sys.executable, os.path.join(BASE_DIR, "tools", "seed_cache.py")],
                 cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True,
+                start_new_session=True, **kwargs,
             )
-            print("[dados] Seed externo disparado (processo separado).")
+            print("[dados] Seed externo disparado (processo separado, nice).")
             return True
         except Exception as exc:  # noqa: BLE001
             print(f"[dados] falha ao disparar seed externo: {exc}")

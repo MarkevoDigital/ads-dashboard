@@ -143,18 +143,33 @@ def requires_auth(fn):
 # ----------------------------------------------------------------------------
 # Frescor dos dados
 # ----------------------------------------------------------------------------
+_auto_refresh_lock = threading.Lock()
+
+
 def maybe_refresh():
-    """Recarrega se o cache for de um dia anterior ou exceder a validade em horas."""
+    """Dispara um refresh em BACKGROUND se o cache for de um dia anterior ou exceder a
+    validade em horas. NUNCA bloqueia a requisicao: serve o cache atual na hora e
+    atualiza por tras (stale-while-revalidate). Sem isso, um refresh lento (ex.: a
+    latencia de DNS do us172, ~10min) travaria o worker e o dashboard inteiro."""
     if store.updated_at is None:
         return  # carga inicial roda em background; evita bloquear a requisicao
     now = datetime.now()
     stale_dia = store.updated_at.date() < now.date()
     stale_horas = (now - store.updated_at).total_seconds() > AUTO_REFRESH_HORAS * 3600
-    if stale_dia or stale_horas:
+    if not (stale_dia or stale_horas):
+        return
+    if not _auto_refresh_lock.acquire(blocking=False):
+        return  # ja ha um refresh em andamento — nao enfileira outro
+
+    def _job():
         try:
-            print("[dados] Auto-refresh:", store.refresh())
+            print("[dados] Auto-refresh (bg):", store.refresh())
         except Exception as exc:  # noqa: BLE001
             print(f"[dados] auto-refresh falhou (mantendo cache): {exc}")
+        finally:
+            _auto_refresh_lock.release()
+
+    threading.Thread(target=_job, daemon=True).start()
 
 
 def _start_scheduler():

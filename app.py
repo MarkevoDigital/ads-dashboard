@@ -19,6 +19,8 @@ from __future__ import annotations
 import atexit
 import os
 import secrets
+import subprocess
+import sys
 import threading
 from datetime import datetime
 from functools import wraps
@@ -36,7 +38,7 @@ from flask import Flask, Response, g, jsonify, render_template, request
 
 import analytics
 import commentary
-from data_sources import DataStore, load_clients, load_config
+from data_sources import STORE_CACHE, DataStore, load_clients, load_config
 
 
 def _load_dotenv():
@@ -61,6 +63,34 @@ _load_dotenv()
 config = load_config()
 store = DataStore(config)
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_cache_mtime = [0.0]      # mtime do pickle ja carregado em memoria
+_seed_proc = [None]       # subprocesso de seed em andamento (se houver)
+_seed_lock = threading.Lock()
+
+
+def _spawn_seed() -> bool:
+    """Roda o refresh PESADO (fetch da API + processamento) em PROCESSO SEPARADO via
+    tools/seed_cache.py. Nunca no worker web: o Passenger roda 1 processo e um refresh
+    de ~10min (latencia de DNS do us172) travaria o dashboard inteiro. O seed grava o
+    pickle; o web app o rele depois (maybe_refresh). Retorna False se ja houver um seed
+    rodando."""
+    with _seed_lock:
+        p = _seed_proc[0]
+        if p is not None and p.poll() is None:
+            return False  # ja ha um seed em andamento
+        try:
+            _seed_proc[0] = subprocess.Popen(
+                [sys.executable, os.path.join(BASE_DIR, "tools", "seed_cache.py")],
+                cwd=BASE_DIR, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            print("[dados] Seed externo disparado (processo separado).")
+            return True
+        except Exception as exc:  # noqa: BLE001
+            print(f"[dados] falha ao disparar seed externo: {exc}")
+            return False
+
 
 def _initial_load():
     """Primeira carga em background — nao bloqueia a subida do app (Passenger).
@@ -70,17 +100,16 @@ def _initial_load():
     2) So busca da API se nao havia cache ou se o cache nao e de hoje (evita refetch
        pesado a cada reciclagem de worker; a atualizacao diaria roda no cron das 8h)."""
     try:
-        loaded = store.load_cache()
+        # Aceita qualquer cache existente (o refresh diario roda no cron, em processo
+        # separado). Subir do cache deixa o worker PRONTO na hora, sem refetch pesado.
+        loaded = store.load_cache(max_age_h=24 * 365)
         if loaded:
+            _cache_mtime[0] = os.path.getmtime(STORE_CACHE)
             print(f"[dados] Cache em disco: Meta={len(store.meta)} Google={len(store.google)} "
                   f"linhas (de {store.updated_at}). Worker pronto.")
-        stale = (store.updated_at is None) or (store.updated_at.date() < datetime.now().date())
-        if not loaded or stale:
-            info = store.refresh()
-            print(f"[dados] Atualizado da API: {info['source']} "
-                  f"(Meta={info['meta_rows']} linhas, Google={info['google_rows']} linhas)")
         else:
-            print("[dados] Cache de hoje — sem refetch na subida do worker.")
+            print("[dados] Sem cache — disparando seed externo.")
+            _spawn_seed()
     except Exception as exc:  # noqa: BLE001
         print(f"[dados] carga inicial falhou: {exc}")
 
@@ -143,33 +172,22 @@ def requires_auth(fn):
 # ----------------------------------------------------------------------------
 # Frescor dos dados
 # ----------------------------------------------------------------------------
-_auto_refresh_lock = threading.Lock()
-
-
 def maybe_refresh():
-    """Dispara um refresh em BACKGROUND se o cache for de um dia anterior ou exceder a
-    validade em horas. NUNCA bloqueia a requisicao: serve o cache atual na hora e
-    atualiza por tras (stale-while-revalidate). Sem isso, um refresh lento (ex.: a
-    latencia de DNS do us172, ~10min) travaria o worker e o dashboard inteiro."""
-    if store.updated_at is None:
-        return  # carga inicial roda em background; evita bloquear a requisicao
-    now = datetime.now()
-    stale_dia = store.updated_at.date() < now.date()
-    stale_horas = (now - store.updated_at).total_seconds() > AUTO_REFRESH_HORAS * 3600
-    if not (stale_dia or stale_horas):
+    """Chamado por requisicao. NUNCA faz fetch de API no processo web (saturaria o
+    unico worker do Passenger). Faz duas coisas baratas/nao-bloqueantes:
+      1) rele o pickle do disco se o seed externo gerou um mais novo;
+      2) se o cache for de outro dia e nenhum seed estiver rodando, dispara o seed
+         externo (processo separado) — auto-cura caso o cron nao tenha rodado."""
+    try:
+        mtime = os.path.getmtime(STORE_CACHE)
+    except OSError:
         return
-    if not _auto_refresh_lock.acquire(blocking=False):
-        return  # ja ha um refresh em andamento — nao enfileira outro
-
-    def _job():
-        try:
-            print("[dados] Auto-refresh (bg):", store.refresh())
-        except Exception as exc:  # noqa: BLE001
-            print(f"[dados] auto-refresh falhou (mantendo cache): {exc}")
-        finally:
-            _auto_refresh_lock.release()
-
-    threading.Thread(target=_job, daemon=True).start()
+    if mtime > _cache_mtime[0] + 1:
+        if store.load_cache(max_age_h=24 * 365):
+            _cache_mtime[0] = mtime
+            print(f"[dados] Cache recarregado do disco (de {store.updated_at}).")
+    if store.updated_at and store.updated_at.date() < datetime.now().date():
+        _spawn_seed()
 
 
 def _start_scheduler():
@@ -179,7 +197,7 @@ def _start_scheduler():
     hour, minute = (int(x) for x in hhmm.split(":"))
     scheduler = BackgroundScheduler(timezone=tz)
     scheduler.add_job(
-        lambda: print("[dados] Atualizacao diaria:", store.refresh()),
+        _spawn_seed,  # seed em processo separado (nao satura o worker web)
         CronTrigger(hour=hour, minute=minute),
         id="refresh_diario", replace_existing=True,
     )
@@ -258,28 +276,22 @@ def api_data():
     return jsonify(payload)
 
 
-def _bg_refresh():
-    """Refresh em background (nao bloqueia a requisicao -> sem timeout no cron)."""
-    try:
-        print("[refresh]", store.refresh())
-    except Exception as exc:  # noqa: BLE001
-        print(f"[refresh] falhou: {exc}")
-
-
 @app.route("/api/refresh", methods=["POST"])
 @requires_auth
 def api_refresh():
-    threading.Thread(target=_bg_refresh, daemon=True).start()
-    return jsonify({"ok": True, "msg": "Atualizacao iniciada em background."})
+    started = _spawn_seed()
+    return jsonify({"ok": True, "msg": "Atualizacao iniciada (processo separado)."
+                    if started else "Ja ha uma atualizacao em andamento."})
 
 
 @app.route("/cron/refresh")
 def cron_refresh():
-    """Para tarefa agendada (cron): GET /cron/refresh?token=SEU_TOKEN"""
+    """Para tarefa agendada (cron): GET /cron/refresh?token=SEU_TOKEN.
+    Dispara o seed em PROCESSO SEPARADO (nao satura o worker web)."""
     if not CRON_TOKEN or request.args.get("token") != CRON_TOKEN:
         return jsonify({"erro": "token invalido"}), 403
-    threading.Thread(target=_bg_refresh, daemon=True).start()
-    return jsonify({"ok": True, "msg": "Refresh iniciado em background."})
+    started = _spawn_seed()
+    return jsonify({"ok": True, "msg": "Seed iniciado." if started else "Seed ja em andamento."})
 
 
 @app.route("/healthz")

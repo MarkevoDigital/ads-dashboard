@@ -192,8 +192,8 @@ def maybe_refresh():
         if store.load_cache(max_age_h=24 * 365):
             _cache_mtime[0] = mtime
             print(f"[dados] Cache recarregado do disco (de {store.updated_at}).")
-    if store.updated_at and store.updated_at.date() < datetime.now().date():
-        _spawn_seed()
+    # Auto-seed-on-stale REMOVIDO: varios workers disparavam seeds simultaneos (guard
+    # por-processo) -> tempestade que derrubava o servidor. Refresh fica so no cron.
 
 
 def _start_scheduler():

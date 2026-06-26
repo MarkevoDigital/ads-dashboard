@@ -10,6 +10,13 @@ import os
 import sys
 from datetime import datetime
 
+# Hospedagem compartilhada (LVE) limita threads/processos. O OpenBLAS tenta abrir 1 thread
+# por nucleo (dezenas) e falha ("Resource temporarily unavailable"), derrubando o import do
+# pandas/numpy. Forcar 1 thread ANTES de importar pandas resolve (mesmo de seed_cache.py).
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
 

@@ -46,20 +46,28 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None) -> dict:
     if s["impressions"] > 0:
         seq.append(("Impressões", round(s["impressions"])))
     seq.append(("Cliques", round(clicks)))
-    # desfechos de conversao, na ordem; so entram se > 0 no periodo
+    # desfechos do periodo, na ordem; so entram se > 0. "Visualizacoes de video" soma
+    # Meta + Google (+ TikTok); "Visitas ao perfil" e do Meta (+ TikTok).
     for label, val in [("Conversões", s["conversions"]), ("Leads", s["leads"]),
-                       ("Conversas", s["messaging"])]:
+                       ("Conversas", s["messaging"]),
+                       ("Visitas ao perfil", s["profile_visits"]),
+                       ("Visualizações de vídeo", s["video_views"])]:
         if val and val > 0:
             seq.append((label, round(val)))
 
     stages = [{"label": lb, "value": v, "fmt": "int"} for lb, v in seq]
-    # taxas: CTR (impr->cliques) e, para cada desfecho, % sobre os cliques
+    # taxas: CTR (impr->cliques) e, para cada desfecho, % sobre os cliques. As views vem
+    # das impressoes (nao dos cliques) -> taxa de visualizacao = views / impressoes.
+    impr = round(s["impressions"])
     rates = []
     for i in range(len(seq) - 1):
         prev_lb, prev_v = seq[i]
         nxt_lb, nxt_v = seq[i + 1]
         if prev_lb == "Impressões" and nxt_lb == "Cliques":
             rates.append({"label": "CTR", "value": round((nxt_v / prev_v) if prev_v else 0.0, 4)})
+        elif nxt_lb == "Visualizações de vídeo":
+            rates.append({"label": "Taxa de visualização",
+                          "value": round((nxt_v / impr) if impr else 0.0, 4)})
         else:
             rates.append({"label": f"Taxa de {nxt_lb.lower()}",
                           "value": round((nxt_v / clicks) if clicks else 0.0, 4)})

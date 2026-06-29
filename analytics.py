@@ -11,6 +11,8 @@ Destaques desta versao:
 """
 from __future__ import annotations
 
+import os
+
 import pandas as pd
 
 import metrics as M
@@ -33,44 +35,62 @@ def _digits(v):
 # ----------------------------------------------------------------------------
 # Funil
 # ----------------------------------------------------------------------------
-def _funnel(meta_cur, google_cur, tiktok_cur=None) -> dict:
-    """Impressoes -> Cliques -> (cada tipo de conversao com valor no periodo).
+# Etapas possiveis do funil: chave (igual a de M.sums) -> rotulo exibido.
+_FUNNEL_LABELS = {
+    "impressions": "Impressões",
+    "video_views": "Visualizações de vídeo",
+    "clicks": "Cliques",
+    "profile_visits": "Visitas ao perfil",
+    "leads": "Leads",
+    "messaging": "Conversas",
+    "conversions": "Conversões",
+}
+# Ordem padrao (preserva o comportamento historico do dashboard).
+_FUNNEL_DEFAULT = ["impressions", "clicks", "conversions", "leads", "messaging",
+                   "profile_visits", "video_views"]
 
-    Mostra uma etapa por desfecho que o cliente realmente teve no periodo
-    (Conversoes, Leads, Conversas, Visitas, Views) — zerados sao omitidos.
-    Taxas = razao entre etapas consecutivas (CTR, taxa de conversao, etc.).
+
+def _funnel_order():
+    """Ordem das etapas do funil — configuravel por deploy via env FUNIL_ORDEM
+    (chaves de _FUNNEL_LABELS separadas por virgula). Ex.:
+      FUNIL_ORDEM=impressions,video_views,clicks,profile_visits,leads,messaging
+    Chaves invalidas sao ignoradas; sem a env, usa a ordem padrao."""
+    raw = os.environ.get("FUNIL_ORDEM", "").strip()
+    if not raw:
+        return _FUNNEL_DEFAULT
+    keys = [k.strip() for k in raw.split(",") if k.strip() in _FUNNEL_LABELS]
+    return keys or _FUNNEL_DEFAULT
+
+
+def _funnel(meta_cur, google_cur, tiktok_cur=None) -> dict:
+    """Funil de resultados. Cada etapa entra so se tiver valor no periodo (cliques
+    sempre aparece). A ORDEM e configuravel por deploy (FUNIL_ORDEM), entao cada
+    agencia prioriza etapas diferentes sem alterar codigo.
+
+    Taxas: CTR = cliques/impressoes; Taxa de visualizacao = views/impressoes (views
+    vem das impressoes, nao dos cliques); demais desfechos = valor/cliques.
     """
     s = M.sums(meta_cur, google_cur, tiktok_cur)
     clicks = s["clicks"]
-    seq = []
-    if s["impressions"] > 0:
-        seq.append(("Impressões", round(s["impressions"])))
-    seq.append(("Cliques", round(clicks)))
-    # desfechos do periodo, na ordem; so entram se > 0. "Visualizacoes de video" soma
-    # Meta + Google (+ TikTok); "Visitas ao perfil" e do Meta (+ TikTok).
-    for label, val in [("Conversões", s["conversions"]), ("Leads", s["leads"]),
-                       ("Conversas", s["messaging"]),
-                       ("Visitas ao perfil", s["profile_visits"]),
-                       ("Visualizações de vídeo", s["video_views"])]:
-        if val and val > 0:
-            seq.append((label, round(val)))
-
-    stages = [{"label": lb, "value": v, "fmt": "int"} for lb, v in seq]
-    # taxas: CTR (impr->cliques) e, para cada desfecho, % sobre os cliques. As views vem
-    # das impressoes (nao dos cliques) -> taxa de visualizacao = views / impressoes.
     impr = round(s["impressions"])
+    seq = []  # (key, label, value)
+    for key in _funnel_order():
+        val = round(s.get(key, 0))
+        if val > 0 or key == "clicks":
+            seq.append((key, _FUNNEL_LABELS[key], val))
+
+    stages = [{"label": lb, "value": v, "fmt": "int"} for (k, lb, v) in seq]
     rates = []
     for i in range(len(seq) - 1):
-        prev_lb, prev_v = seq[i]
-        nxt_lb, nxt_v = seq[i + 1]
-        if prev_lb == "Impressões" and nxt_lb == "Cliques":
-            rates.append({"label": "CTR", "value": round((nxt_v / prev_v) if prev_v else 0.0, 4)})
-        elif nxt_lb == "Visualizações de vídeo":
+        nkey, nlb, nv = seq[i + 1]
+        if nkey == "clicks":
+            rates.append({"label": "CTR", "value": round((nv / impr) if impr else 0.0, 4)})
+        elif nkey == "video_views":
             rates.append({"label": "Taxa de visualização",
-                          "value": round((nxt_v / impr) if impr else 0.0, 4)})
+                          "value": round((nv / impr) if impr else 0.0, 4)})
         else:
-            rates.append({"label": f"Taxa de {nxt_lb.lower()}",
-                          "value": round((nxt_v / clicks) if clicks else 0.0, 4)})
+            rates.append({"label": f"Taxa de {nlb.lower()}",
+                          "value": round((nv / clicks) if clicks else 0.0, 4)})
     return {"stages": stages, "rates": rates}
 
 

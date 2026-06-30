@@ -299,6 +299,12 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
         video_views = _first_action(actions, ACTION_KEYS["video_views"])
         engagement = _first_action(actions, ACTION_KEYS["engagement"])
         objective = _resolve_objective(r.get("objective", ""), msg, visits, obj_map)
+        # Leads SO por formulario (Instant Form = onsite_conversion.lead_grouped) e SO de
+        # campanhas com objetivo de geracao de leads. Coluna paralela usada por clientes
+        # com a flag leads_form_only no clients.json (ex.: IPV7), para baterem com o
+        # gerenciador (a coluna "leads" padrao soma form + pixel + genericos).
+        form_leads = (_first_action(actions, ["onsite_conversion.lead_grouped"])
+                      if objective == "leads" else 0.0)
         ad_id = r.get("ad_id", "")
         ad_meta = thumbs.get(ad_id, {}) or {}
         out.append({
@@ -319,7 +325,8 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
             "link_clicks": float(r.get("inline_link_clicks", 0) or 0),
             "spend": float(r.get("spend", 0) or 0),
             "messaging_conversations": msg,
-            "profile_visits": visits, "leads": leads, "purchases": purchases,
+            "profile_visits": visits, "leads": leads, "form_leads": form_leads,
+            "purchases": purchases,
             "purchase_value": revenue, "site_visits": site_visits,
             "video_views": video_views, "engagement": engagement,
         })

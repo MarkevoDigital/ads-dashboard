@@ -518,6 +518,12 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
     tiktok = store.tiktok.copy() if getattr(store, "tiktok", None) is not None \
         else pd.DataFrame(columns=meta.columns)
 
+    # Cliente com leads_form_only (ex.: IPV7): "Leads" passa a contar SO os leads por
+    # formulario (Instant Form) de campanhas com objetivo lead-gen, batendo com o
+    # gerenciador. A coluna padrao "leads" soma form + pixel + genericos.
+    if scope and scope.get("leads_form_only") and "form_leads" in meta.columns:
+        meta["leads"] = meta["form_leads"]
+
     if scope is not None:
         meta_ids = scope.get("meta_ids") or set()
         google_ids = scope.get("google_ids") or set()

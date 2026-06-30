@@ -34,7 +34,7 @@ META_COLUMNS = [
     "date", "account", "account_id", "objective", "campaign", "adset", "ad_name",
     "ad_thumbnail_url", "ad_permalink", "daily_budget", "impressions", "reach", "frequency",
     "clicks", "link_clicks", "spend", "messaging_conversations",
-    "profile_visits", "leads", "purchases", "purchase_value",
+    "profile_visits", "leads", "form_leads", "purchases", "purchase_value",
     "site_visits", "video_views", "engagement",
 ]
 GOOGLE_COLUMNS = [
@@ -48,7 +48,7 @@ GEO_COLUMNS = [
 
 NUMERIC_META = [
     "daily_budget", "impressions", "reach", "frequency", "clicks", "link_clicks", "spend",
-    "messaging_conversations", "profile_visits", "leads", "purchases",
+    "messaging_conversations", "profile_visits", "leads", "form_leads", "purchases",
     "purchase_value", "site_visits", "video_views", "engagement",
 ]
 NUMERIC_GOOGLE = [

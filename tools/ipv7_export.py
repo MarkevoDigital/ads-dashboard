@@ -116,7 +116,8 @@ store.google = _coerce(google_df, GOOGLE_COLUMNS, NUMERIC_GOOGLE)
 store.geo = pd.DataFrame(columns=GEO_COLUMNS)
 store.updated_at = datetime.now()
 
-scope = {"meta_ids": set(meta_ids), "google_ids": set(google_ids)}
+scope = {"meta_ids": set(meta_ids), "google_ids": set(google_ids),
+         "leads_form_only": bool(cli.get("leads_form_only", False))}
 p = analytics.build_payload(store, account="todas", platform="todas",
                             days=31, scope=scope, start=start, end=end)
 try:

@@ -49,6 +49,18 @@ _FUNNEL_LABELS = {
 _FUNNEL_DEFAULT = ["impressions", "clicks", "conversions", "leads", "messaging",
                    "profile_visits", "video_views"]
 
+# Metrica de custo de cada etapa (rotulo + funcao sobre os sums). Usa o investimento
+# TOTAL (mesma convencao dos KPIs de destaque do dashboard). CPM = custo por mil impressoes.
+_FUNNEL_COST = {
+    "impressions":    ("CPM",            lambda s: (s["spend"] / s["impressions"] * 1000) if s["impressions"] else 0.0),
+    "video_views":    ("Custo/view",     lambda s: (s["spend"] / s["video_views"]) if s["video_views"] else 0.0),
+    "clicks":         ("CPC",            lambda s: (s["spend"] / s["clicks"]) if s["clicks"] else 0.0),
+    "profile_visits": ("Custo/visita",   lambda s: (s["spend"] / s["profile_visits"]) if s["profile_visits"] else 0.0),
+    "conversions":    ("CPA",            lambda s: (s["spend"] / s["conversions"]) if s["conversions"] else 0.0),
+    "leads":          ("CPL",            lambda s: (s["spend"] / s["leads"]) if s["leads"] else 0.0),
+    "messaging":      ("Custo/conversa", lambda s: (s["spend"] / s["messaging"]) if s["messaging"] else 0.0),
+}
+
 
 def _funnel_order():
     """Ordem das etapas do funil — configuravel por deploy via env FUNIL_ORDEM
@@ -79,7 +91,14 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None) -> dict:
         if val > 0 or key == "clicks":
             seq.append((key, _FUNNEL_LABELS[key], val))
 
-    stages = [{"label": lb, "value": v, "fmt": "int"} for (k, lb, v) in seq]
+    stages = []
+    for (k, lb, v) in seq:
+        st = {"label": lb, "value": v, "fmt": "int"}
+        cost = _FUNNEL_COST.get(k)
+        if cost:
+            st["cost_label"] = cost[0]
+            st["cost"] = round(cost[1](s), 2)
+        stages.append(st)
     rates = []
     for i in range(len(seq) - 1):
         nkey, nlb, nv = seq[i + 1]

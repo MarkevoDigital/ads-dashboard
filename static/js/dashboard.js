@@ -168,9 +168,12 @@
     let html = "";
     f.stages.forEach((s, i) => {
       const w = Math.max((s.value / maxV) * 100, 26);
+      const cost = s.cost_label
+        ? `<span class="fn-cost">${s.cost_label}: ${fmt(s.cost, "currency")}</span>` : "";
       html += `<div class="fn-stage" style="width:${w}%">
         <span class="fn-label">${s.label}</span>
-        <span class="fn-value">${fmt(s.value, s.fmt)}</span></div>`;
+        <span class="fn-value">${fmt(s.value, s.fmt)}</span>
+        ${cost}</div>`;
       if (i < f.stages.length - 1 && f.rates && f.rates[i]) {
         html += `<div class="fn-rate">▼ ${f.rates[i].label}: <b>${fmt(f.rates[i].value, "pct")}</b></div>`;
       }

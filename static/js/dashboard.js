@@ -85,12 +85,16 @@
       }
     }
     const mi = data.meta_info || {};
+    let reportClient = "";
     if (data.cliente_sel && $("f-client")) {
       const opt = $("f-client").options[$("f-client").selectedIndex];
-      $("cliente-sub").textContent = "Vendo como: " + (opt ? opt.textContent : data.cliente_sel);
+      reportClient = opt ? opt.textContent : data.cliente_sel;
+      $("cliente-sub").textContent = "Vendo como: " + reportClient;
     } else if (mi.cliente) {
+      reportClient = mi.cliente;
       $("cliente-sub").textContent = mi.cliente;
     }
+    if ($("report-client")) $("report-client").textContent = reportClient;
     $("src-info").textContent = "Fonte: " + (mi.fonte || "—") +
       (mi.atualizado_em ? " · atualizado " + new Date(mi.atualizado_em).toLocaleString("pt-BR") : "");
 
@@ -115,6 +119,7 @@
     const p = data.periodo;
     $("period-info").textContent =
       `Período: ${p.inicio} a ${p.fim} (anterior: ${p.anterior_inicio} a ${p.anterior_fim})`;
+    if ($("report-period")) $("report-period").textContent = `Período: ${p.inicio} a ${p.fim}`;
 
     populateMonths(p.fim);
 
@@ -542,54 +547,19 @@
     } catch (e) { done(); }
   });
 
-  // ---- Exportar a visualização em PDF ----
-  $("f-pdf").addEventListener("click", () => {
-    const btn = $("f-pdf");
-    if (typeof html2pdf === "undefined") { alert("Biblioteca de PDF não carregou. Recarregue a página e tente de novo."); return; }
-    const orig = btn.textContent;
-    btn.textContent = "⏳ Gerando…"; btn.disabled = true;
-    const el = $("app");
-    const nome = ($("cliente-sub").textContent || "Dashboard").trim();
-    const slug = nome.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\w]+/g, "_") || "ads";
-    // título temporário p/ contexto no PDF (cliente + período/fonte)
-    const title = document.createElement("div");
-    title.style.cssText = "padding:6px 2px 12px;border-bottom:1px solid #2a3346;margin-bottom:14px";
-    title.innerHTML = `<div style="font-size:20px;font-weight:700;color:#e6eaf2">📊 Dashboard de Ads — ${nome}</div>
-      <div style="font-size:12px;color:#93a0b8;margin-top:3px">${$("src-info").textContent} · ${$("period-info").textContent}</div>`;
-    el.insertBefore(title, el.firstChild);
-    // Estilo temporário p/ impressão: largura fixa desktop, tabelas sem corte
-    // (permite quebra de célula e remove o scroll horizontal que cortava colunas)
-    const pdfStyle = document.createElement("style");
-    pdfStyle.id = "pdf-print-style";
-    pdfStyle.textContent =
-      "#app{max-width:none!important}" +
-      "#app .table-wrap{overflow:visible!important}" +
-      "#app table{table-layout:fixed!important;width:100%!important}" +
-      "#app table th,#app table td{white-space:normal!important;word-break:break-word;font-size:11px!important;padding:6px 7px!important}" +
-      "#app .two-col{grid-template-columns:1fr 1fr!important}";
-    document.head.appendChild(pdfStyle);
-    setTimeout(() => geoMap && geoMap.invalidateSize(), 50);
-    const cleanup = () => {
-      try { el.removeChild(title); } catch (e) {}
-      try { document.head.removeChild(pdfStyle); } catch (e) {}
-      btn.textContent = orig; btn.disabled = false;
-    };
-    const opt = {
-      margin: [7, 7, 8, 7],
-      filename: `dashboard_${slug}.pdf`,
-      image: { type: "jpeg", quality: 0.96 },
-      // windowWidth fixo garante layout desktop e enquadramento consistente;
-      // landscape (A4 paisagem) dá largura suficiente p/ as tabelas não cortarem.
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: "#0f1420", logging: false, scrollX: 0, scrollY: 0, windowWidth: 1280 },
-      jsPDF: { unit: "mm", format: "a4", orientation: "landscape" },
-      pagebreak: { mode: ["css", "legacy"] },
-    };
-    setTimeout(() => {
-      html2pdf().set(opt).from(el).save()
-        .then(() => { cleanup(); })
-        .catch((e) => { console.error(e); cleanup(); alert("Não foi possível gerar o PDF. Tente novamente."); });
-    }, 300);
-  });
+  // ---- Exportar em PDF (impressão nativa) ----
+  // Usa window.print() + CSS @media print (papel carta, sem margens, fundo
+  // ativado). Não rasteriza a tela (texto vetorial, sem cortes) e NÃO gera
+  // nenhuma carga no servidor. Os gráficos (Chart.js/Leaflet) são
+  // redimensionados p/ a largura da folha no evento beforeprint.
+  const resizeCharts = () => {
+    try { if (trendChart) trendChart.resize(); } catch (e) {}
+    try { if (platformChart) platformChart.resize(); } catch (e) {}
+    try { if (geoMap) geoMap.invalidateSize(); } catch (e) {}
+  };
+  window.addEventListener("beforeprint", resizeCharts);
+  window.addEventListener("afterprint", resizeCharts);
+  $("f-pdf").addEventListener("click", () => { resizeCharts(); window.print(); });
 
   load();
 })();

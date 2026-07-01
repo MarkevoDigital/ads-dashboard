@@ -33,6 +33,7 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
     os.environ.setdefault(_v, "1")
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.triggers.cron import CronTrigger
 from flask import Flask, Response, g, jsonify, render_template, request
 
@@ -197,12 +198,42 @@ def maybe_refresh():
     # por-processo) -> tempestade que derrubava o servidor. Refresh fica so no cron.
 
 
+# Segura o flock do agendador enquanto o worker viver (impede N schedulers).
+_sched_lock_fd = [None]
+
+
+def _acquire_scheduler_lock() -> bool:
+    """So UM worker do Passenger deve rodar o agendador. Sem isto, cada worker cria
+    seu proprio BackgroundScheduler e, as 07:00, TODOS disparam o seed ao mesmo tempo
+    -> tempestade de processos que estoura o limite de nproc (LVE) e gera 503.
+    flock exclusivo nao-bloqueante: o 1o worker segura; os demais pulam o agendador.
+    O lock e liberado quando esse worker morre, e o proximo a subir assume."""
+    try:
+        import fcntl
+    except ImportError:
+        return True  # Windows (dev): roda o agendador normalmente.
+    try:
+        os.makedirs(os.path.join(BASE_DIR, "tmp"), exist_ok=True)
+        fd = os.open(os.path.join(BASE_DIR, "tmp", "scheduler.lock"),
+                     os.O_CREAT | os.O_RDWR, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _sched_lock_fd[0] = fd  # mantem aberto -> mantem o lock
+        return True
+    except OSError:
+        return False  # outro worker ja e o dono do agendador.
+
+
 def _start_scheduler():
+    if not _acquire_scheduler_lock():
+        print("[agendador] outro worker ja roda o agendador — este worker nao inicia.")
+        return
     sched = config.get("atualizacao", {})
     hhmm = sched.get("hora_diaria", "07:00")
     tz = sched.get("fuso", "America/Sao_Paulo")
     hour, minute = (int(x) for x in hhmm.split(":"))
-    scheduler = BackgroundScheduler(timezone=tz)
+    # Pool de 1 thread: o job so dispara um subprocesso (leve). Menos threads = menos nproc.
+    scheduler = BackgroundScheduler(
+        timezone=tz, executors={"default": ThreadPoolExecutor(1)})
     scheduler.add_job(
         _spawn_seed,  # seed em processo separado (nao satura o worker web)
         CronTrigger(hour=hour, minute=minute),

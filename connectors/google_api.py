@@ -155,6 +155,18 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
         WHERE segments.date BETWEEN '{since}' AND '{until}'
           AND campaign.advertising_channel_type != 'SEARCH'
     """
+    # Fallback SEM metrics.video_views: algumas versoes/config da API do Google
+    # rejeitam esse campo ("Unrecognized field") e derrubariam TODAS as campanhas
+    # nao-SEARCH. Se a query acima falhar por causa dele, usamos esta (video_views=0).
+    camp_query_novv = f"""
+        SELECT segments.date, customer.descriptive_name, campaign.name,
+               campaign.advertising_channel_type,
+               metrics.impressions, metrics.clicks, metrics.cost_micros,
+               metrics.conversions, metrics.conversions_value
+        FROM campaign
+        WHERE segments.date BETWEEN '{since}' AND '{until}'
+          AND campaign.advertising_channel_type != 'SEARCH'
+    """
     # orcamento diario por campanha (query separada -> nao quebra o fetch principal)
     budget_query = "SELECT campaign.name, campaign_budget.amount_micros FROM campaign"
 
@@ -193,8 +205,17 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "interactions": float(row.metrics.clicks),
                         "daily_budget": budget_map.get(row.campaign.name, 0.0),
                     })
-            # Demais campanhas (totais)
-            for batch in service.search_stream(customer_id=cid, query=camp_query):
+            # Demais campanhas (totais). Tenta COM metrics.video_views; se a API
+            # rejeitar o campo, refaz SEM ele (video_views=0) — senao perderiamos
+            # todas as campanhas nao-SEARCH desta conta.
+            try:
+                camp_batches = list(service.search_stream(customer_id=cid, query=camp_query))
+            except GoogleAdsException as exc:
+                if "video_views" in str(exc) or "Unrecognized field" in str(exc):
+                    camp_batches = list(service.search_stream(customer_id=cid, query=camp_query_novv))
+                else:
+                    raise
+            for batch in camp_batches:
                 for row in batch.results:
                     ch = row.campaign.advertising_channel_type.name
                     rows.append({

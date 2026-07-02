@@ -109,21 +109,14 @@ def _spawn_seed() -> bool:
 
 
 def _initial_load():
-    """Primeira carga em background — nao bloqueia a subida do app (Passenger).
-
-    1) Sobe o store do cache em disco (instantaneo) -> worker reciclado fica PRONTO
-       na hora, sem o "carregando" de ~15min.
-    2) So busca da API se nao havia cache ou se o cache nao e de hoje (evita refetch
-       pesado a cada reciclagem de worker; a atualizacao diaria roda no cron das 8h)."""
+    """No boot do worker NAO carregamos o cache: o unpickle (~2.6MB de DataFrames)
+    segura o GIL por segundos e, com spawn sob demanda do LSAPI, bloqueava o worker
+    frio -> "Request Timeout" ao abrir o dashboard. O cache passa a ser carregado
+    SOB DEMANDA no 1o /api/data (via maybe_refresh), deixando /, /static e /healthz
+    instantaneos mesmo em worker frio. Aqui so tratamos o caso de ainda NAO existir
+    cache: dispara um seed (barato, sem unpickle)."""
     try:
-        # Aceita qualquer cache existente (o refresh diario roda no cron, em processo
-        # separado). Subir do cache deixa o worker PRONTO na hora, sem refetch pesado.
-        loaded = store.load_cache(max_age_h=24 * 365)
-        if loaded:
-            _cache_mtime[0] = os.path.getmtime(STORE_CACHE)
-            print(f"[dados] Cache em disco: Meta={len(store.meta)} Google={len(store.google)} "
-                  f"linhas (de {store.updated_at}). Worker pronto.")
-        else:
+        if not os.path.exists(STORE_CACHE):
             print("[dados] Sem cache - disparando seed externo.")
             _spawn_seed()
     except Exception as exc:  # noqa: BLE001

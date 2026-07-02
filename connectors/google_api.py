@@ -149,7 +149,8 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
         SELECT segments.date, customer.descriptive_name, campaign.name,
                campaign.advertising_channel_type,
                metrics.impressions, metrics.clicks, metrics.cost_micros,
-               metrics.conversions, metrics.conversions_value
+               metrics.conversions, metrics.conversions_value,
+               metrics.video_views
         FROM campaign
         WHERE segments.date BETWEEN '{since}' AND '{until}'
           AND campaign.advertising_channel_type != 'SEARCH'
@@ -211,7 +212,8 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "cost": row.metrics.cost_micros / 1_000_000.0,
                         "conversions": float(row.metrics.conversions),
                         "conversion_value": float(row.metrics.conversions_value),
-                        "video_views": 0.0,
+                        # Views de vídeo (YouTube/Video, Demand Gen etc.). Em SEARCH é 0.
+                        "video_views": float(row.metrics.video_views),
                         "interactions": float(row.metrics.clicks),
                         "daily_budget": budget_map.get(row.campaign.name, 0.0),
                     })

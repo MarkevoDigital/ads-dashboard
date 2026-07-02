@@ -32,6 +32,15 @@ for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
            "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
     os.environ.setdefault(_v, "1")
 
+# O locale de algumas contas (ex.: markevo42) e ASCII -> um print com caractere
+# nao-ASCII (acento, travessao "—") lanca UnicodeEncodeError e quebra o worker/
+# agendador. Forca stdout/stderr em UTF-8 com errors="replace" (no-op se ja for).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        pass
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.triggers.cron import CronTrigger
@@ -115,7 +124,7 @@ def _initial_load():
             print(f"[dados] Cache em disco: Meta={len(store.meta)} Google={len(store.google)} "
                   f"linhas (de {store.updated_at}). Worker pronto.")
         else:
-            print("[dados] Sem cache — disparando seed externo.")
+            print("[dados] Sem cache - disparando seed externo.")
             _spawn_seed()
     except Exception as exc:  # noqa: BLE001
         print(f"[dados] carga inicial falhou: {exc}")
@@ -155,7 +164,7 @@ def _build_users():
 
 
 USERS = _build_users()
-print(f"[auth] {len(USERS)} login(s) configurado(s): {', '.join(USERS) or '(nenhum — acesso aberto)'}")
+print(f"[auth] {len(USERS)} login(s) configurado(s): {', '.join(USERS) or '(nenhum - acesso aberto)'}")
 
 
 def requires_auth(fn):
@@ -225,7 +234,7 @@ def _acquire_scheduler_lock() -> bool:
 
 def _start_scheduler():
     if not _acquire_scheduler_lock():
-        print("[agendador] outro worker ja roda o agendador — este worker nao inicia.")
+        print("[agendador] outro worker ja roda o agendador - este worker nao inicia.")
         return
     sched = config.get("atualizacao", {})
     hhmm = sched.get("hora_diaria", "07:00")

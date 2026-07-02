@@ -150,12 +150,12 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                campaign.advertising_channel_type,
                metrics.impressions, metrics.clicks, metrics.cost_micros,
                metrics.conversions, metrics.conversions_value,
-               metrics.video_views
+               metrics.video_trueview_views
         FROM campaign
         WHERE segments.date BETWEEN '{since}' AND '{until}'
           AND campaign.advertising_channel_type != 'SEARCH'
     """
-    # Fallback SEM metrics.video_views: algumas versoes/config da API do Google
+    # Fallback SEM o campo de video: algumas versoes/config da API do Google
     # rejeitam esse campo ("Unrecognized field") e derrubariam TODAS as campanhas
     # nao-SEARCH. Se a query acima falhar por causa dele, usamos esta (video_views=0).
     camp_query_novv = f"""
@@ -211,7 +211,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
             try:
                 camp_batches = list(service.search_stream(customer_id=cid, query=camp_query))
             except GoogleAdsException as exc:
-                if "video_views" in str(exc) or "Unrecognized field" in str(exc):
+                if "video" in str(exc) or "Unrecognized field" in str(exc):
                     camp_batches = list(service.search_stream(customer_id=cid, query=camp_query_novv))
                 else:
                     raise
@@ -233,10 +233,10 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "cost": row.metrics.cost_micros / 1_000_000.0,
                         "conversions": float(row.metrics.conversions),
                         "conversion_value": float(row.metrics.conversions_value),
-                        # Views de vídeo (YouTube/Video). Acesso SEGURO: a versao
-                        # da lib google-ads pode nem ter esse campo no proto Metrics
-                        # (AttributeError) -> getattr com default evita quebrar o fetch.
-                        "video_views": float(getattr(row.metrics, "video_views", 0.0) or 0.0),
+                        # Views de vídeo (YouTube/Video). Na API v24 o campo e
+                        # metrics.video_trueview_views (o antigo video_views nao existe
+                        # mais). getattr = seguro caso o nome mude de novo entre versoes.
+                        "video_views": float(getattr(row.metrics, "video_trueview_views", 0.0) or 0.0),
                         "interactions": float(row.metrics.clicks),
                         "daily_budget": budget_map.get(row.campaign.name, 0.0),
                     })

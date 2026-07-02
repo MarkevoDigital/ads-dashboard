@@ -233,8 +233,10 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "cost": row.metrics.cost_micros / 1_000_000.0,
                         "conversions": float(row.metrics.conversions),
                         "conversion_value": float(row.metrics.conversions_value),
-                        # Views de vídeo (YouTube/Video, Demand Gen etc.). Em SEARCH é 0.
-                        "video_views": float(row.metrics.video_views),
+                        # Views de vídeo (YouTube/Video). Acesso SEGURO: a versao
+                        # da lib google-ads pode nem ter esse campo no proto Metrics
+                        # (AttributeError) -> getattr com default evita quebrar o fetch.
+                        "video_views": float(getattr(row.metrics, "video_views", 0.0) or 0.0),
                         "interactions": float(row.metrics.clicks),
                         "daily_budget": budget_map.get(row.campaign.name, 0.0),
                     })

@@ -199,23 +199,40 @@ def _account_ids(meta_cfg: dict, token: str, version: str) -> list[str]:
 
 
 def _thumbnails(account_id, token, version) -> dict:
-    """Mapa ad_id -> {thumb, link} (print do criativo + link de preview do anuncio)."""
-    url = f"{GRAPH}/{version}/{account_id}/ads"
-    params = {
-        "fields": "id,preview_shareable_link,creative{thumbnail_url,image_url}",
-        "limit": 100,  # paginas menores: contas grandes estouram 'reduce the amount of data'
-        "access_token": token,
-    }
+    """Mapa ad_id -> {thumb, link} (print do criativo + link de preview do anuncio).
+
+    A expansao creative{...} e pesada: contas com muitos anuncios estouram
+    'Please reduce the amount of data you're asking for' JA na 1a pagina, o que
+    zerava thumbs+links de TODOS os anuncios (ex.: Bem me Fiz). Aqui tentamos
+    limites de pagina decrescentes (50->25->10->5) ate a Meta aceitar, coletando
+    pagina a pagina e mantendo o que ja veio."""
+    base_url = f"{GRAPH}/{version}/{account_id}/ads"
+    fields = "id,preview_shareable_link,creative{thumbnail_url,image_url}"
     mapa = {}
-    try:
-        for ad in _paged_get(url, params):
-            cre = ad.get("creative", {}) or {}
-            mapa[ad["id"]] = {
-                "thumb": cre.get("thumbnail_url") or cre.get("image_url") or "",
-                "link": ad.get("preview_shareable_link") or "",
-            }
-    except Exception as exc:  # noqa: BLE001
-        print(f"[meta] thumbnails/preview indisponiveis: {exc}")
+    for lim in (50, 25, 10, 5):
+        mapa = {}
+        url, params = base_url, {"fields": fields, "limit": lim, "access_token": token}
+        try:
+            while url:
+                resp = requests.get(url, params=params, timeout=60)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Meta API {resp.status_code}: {resp.text[:200]}")
+                body = resp.json()
+                for ad in body.get("data", []):
+                    cre = ad.get("creative", {}) or {}
+                    mapa[ad["id"]] = {
+                        "thumb": cre.get("thumbnail_url") or cre.get("image_url") or "",
+                        "link": ad.get("preview_shareable_link") or "",
+                    }
+                url = body.get("paging", {}).get("next")
+                params = None  # 'next' ja contem a querystring
+            return mapa  # sucesso nesse limite
+        except RuntimeError as exc:
+            if _bisectable(exc) and lim > 5:
+                print(f"[meta] thumbnails {account_id}: pagina grande demais (limit={lim}), reduzindo")
+                continue
+            print(f"[meta] thumbnails/preview indisponiveis ({account_id}): {exc}")
+            return mapa  # devolve o parcial que conseguiu
     return mapa
 
 

@@ -77,16 +77,54 @@ def generate(payload: dict) -> dict:
                 verbo = "caíram" if plural else "caiu"
             destaques.append(f"📈 {cap} {verbo} {_pct(d)}, chegando a {fmt(m['current'], m['fmt'])}.")
 
-    # 2) Funil: conversoes geradas
+    # 2) Funil: desfechos do periodo. Percorre as etapas NA ORDEM DO FUNIL (que ja e
+    # configuravel por deploy via FUNIL_ORDEM) e comenta conversoes/conversas, LEADS e
+    # VISUALIZACOES DE VIDEO — cada um so quando relevante, com custo/taxa de apoio.
     fun = payload.get("funil") or {}
-    stages = {s["label"]: s for s in fun.get("stages", [])}
-    if len(fun.get("stages", [])) >= 3:
-        conv = fun["stages"][-1]
-        taxa = next((r for r in fun.get("rates", []) if r["label"].startswith("Taxa")), None)
-        txt = f"🎯 {fmt(conv['value'], 'int')} {conv['label'].lower()} no período"
-        if taxa:
-            txt += f" (taxa de conversão de {fmt(taxa['value'], 'pct')})"
-        destaques.append(txt + ".")
+    stages = fun.get("stages", [])
+
+    def _rate(prefix):
+        return next((r for r in fun.get("rates", []) if r.get("label", "").startswith(prefix)), None)
+
+    for st in stages:
+        lbl = st.get("label")
+        val = st.get("value", 0) or 0
+        if lbl == "Leads" and val > 0:
+            # LEADS — sempre relevante quando ha leads captados no periodo
+            det = []
+            if st.get("cost"):
+                det.append(f"CPL de {fmt(st['cost'], 'currency')}")
+            tl = _rate("Taxa de leads")
+            if tl:
+                det.append(f"taxa de {fmt(tl['value'], 'pct')}")
+            noun = "lead captado" if val == 1 else "leads captados"
+            txt = f"📋 {fmt(val, 'int')} {noun} no período"
+            if det:
+                txt += " (" + ", ".join(det) + ")"
+            destaques.append(txt + ".")
+        elif lbl == "Visualizações de vídeo" and val >= 500:
+            # VIDEO — relevante quando ha volume material (>= 500 views)
+            det = []
+            tv = _rate("Taxa de visualização")
+            if tv:
+                det.append(f"taxa de {fmt(tv['value'], 'pct')}")
+            if st.get("cost"):
+                det.append(f"{st['cost_label'].lower()} de {fmt(st['cost'], 'currency')}")
+            txt = f"🎬 {fmt(val, 'int')} visualizações de vídeo"
+            if det:
+                txt += " (" + ", ".join(det) + ")"
+            vv = by_key.get("video_views")
+            if vv and vv.get("delta_pct") is not None and abs(vv["delta_pct"]) >= 1:
+                d = vv["delta_pct"]
+                txt += f" — {'alta' if d > 0 else 'queda'} de {_pct(d)} vs. período anterior"
+            destaques.append(txt + ".")
+        elif lbl in ("Conversões", "Conversas") and val > 0:
+            # Desfecho de conversao/conversa, com o custo correspondente
+            noun = {"Conversões": "conversão", "Conversas": "conversa"}[lbl] if val == 1 else lbl.lower()
+            txt = f"🎯 {fmt(val, 'int')} {noun} no período"
+            if st.get("cost"):
+                txt += f" ({st['cost_label'].lower()} de {fmt(st['cost'], 'currency')})"
+            destaques.append(txt + ".")
 
     # 3) Melhor anuncio (destaque = nº de resultados; eficiencia como apoio)
     ads = payload.get("melhores_anuncios") or []

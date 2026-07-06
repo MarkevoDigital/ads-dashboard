@@ -533,6 +533,18 @@ class DataStore:
                     print(f"[tiktok] fetch falhou: {exc}")
             if meta_df.empty and google_df.empty and tiktok_df.empty:
                 raise RuntimeError("API sem dados (verifique tokens/contas).")
+            # Falha PARCIAL do Google: se ha credenciais Google configuradas mas o fetch
+            # voltou VAZIO — tipicamente a descoberta de contas sob o MCC falhou por limite
+            # de processos/grpc (nproc/LVE) — NAO persistimos um cache com Google zerado
+            # para TODOS os clientes. Abortamos o refresh p/ preservar o ultimo cache bom;
+            # o proximo seed recupera. So dispara quando o Meta veio com dados (sinal de que
+            # a conexao geral esta ok e o Google vazio e anomalo, nao "conta sem veiculacao").
+            g_api = api.get("google_ads", {})
+            google_ligado = bool(g_api.get("developer_token") and g_api.get("refresh_token")
+                                 and (g_api.get("customer_ids") or g_api.get("login_customer_id")))
+            if google_ligado and google_df.empty and not meta_df.empty:
+                raise RuntimeError("Google Ads configurado retornou 0 linhas (descoberta/fetch "
+                                   "falhou) — refresh abortado para preservar o cache anterior.")
             geo_frames = []
             try:
                 geo_frames.append(meta_api.fetch_geo(api.get("meta", {}), dias))

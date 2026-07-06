@@ -98,29 +98,37 @@ def _customer_ids(g_cfg: dict, client) -> list[str]:
     login = _digits(g_cfg.get("login_customer_id", ""))
     if not login:
         return []
-    try:
-        from google.ads.googleads.errors import GoogleAdsException  # noqa
-        service = client.get_service("GoogleAdsService")
-        query = """
-            SELECT customer_client.id, customer_client.manager,
-                   customer_client.status, customer_client.level
-            FROM customer_client
-            WHERE customer_client.status = 'ENABLED'
-        """
-        out, seen = [], set()
-        for batch in service.search_stream(customer_id=login, query=query):
-            for row in batch.results:
-                if row.customer_client.manager:  # pula MCCs (so contas folha)
-                    continue
-                cid = str(row.customer_client.id)
-                if cid not in seen:
-                    seen.add(cid)
-                    out.append(cid)
-        print(f"[google] {len(out)} contas descobertas no MCC {login}.")
-        return out
-    except Exception as exc:  # noqa: BLE001
-        print(f"[google] descoberta de contas falhou: {exc}")
-        return []
+    service = client.get_service("GoogleAdsService")
+    query = """
+        SELECT customer_client.id, customer_client.manager,
+               customer_client.status, customer_client.level
+        FROM customer_client
+        WHERE customer_client.status = 'ENABLED'
+    """
+    # Retry com backoff: sob limite de processos/grpc (nproc/LVE) a descoberta pode
+    # falhar de forma transitoria. Sem retry, um blip zera TODAS as contas Google do
+    # seed. Tentamos ate 3x antes de desistir (e ai o guard em _load_raw preserva o
+    # cache anterior em vez de persistir Google vazio).
+    import time as _t
+    last = None
+    for _try in range(3):
+        try:
+            out, seen = [], set()
+            for batch in service.search_stream(customer_id=login, query=query):
+                for row in batch.results:
+                    if row.customer_client.manager:  # pula MCCs (so contas folha)
+                        continue
+                    cid = str(row.customer_client.id)
+                    if cid not in seen:
+                        seen.add(cid)
+                        out.append(cid)
+            print(f"[google] {len(out)} contas descobertas no MCC {login}.")
+            return out
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            _t.sleep(1.5 * (_try + 1))
+    print(f"[google] descoberta de contas falhou apos retries: {last}")
+    return []
 
 
 def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:

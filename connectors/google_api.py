@@ -155,6 +155,10 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
         WHERE segments.date BETWEEN '{since}' AND '{until}'
           AND campaign.advertising_channel_type = 'SEARCH'
     """
+    # Totais por CAMPANHA de TODOS os canais (inclusive SEARCH). A Pesquisa entra aqui
+    # como residual (ver o loop abaixo): keyword_view sozinho perde os cliques/conversoes
+    # que o Google nao atribui a uma palavra-chave especifica, e os numeros ficavam abaixo
+    # dos do Google Ads.
     camp_query = f"""
         SELECT segments.date, customer.descriptive_name, campaign.name,
                campaign.advertising_channel_type,
@@ -163,7 +167,6 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                metrics.video_trueview_views
         FROM campaign
         WHERE segments.date BETWEEN '{since}' AND '{until}'
-          AND campaign.advertising_channel_type != 'SEARCH'
     """
     # Fallback SEM o campo de video: algumas versoes/config da API do Google
     # rejeitam esse campo ("Unrecognized field") e derrubariam TODAS as campanhas
@@ -175,7 +178,6 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                metrics.conversions, metrics.conversions_value
         FROM campaign
         WHERE segments.date BETWEEN '{since}' AND '{until}'
-          AND campaign.advertising_channel_type != 'SEARCH'
     """
     # orcamento diario por campanha (query separada -> nao quebra o fetch principal)
     budget_query = "SELECT campaign.name, campaign_budget.amount_micros FROM campaign"
@@ -190,11 +192,22 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                     budget_map[row.campaign.name] = row.campaign_budget.amount_micros / 1_000_000.0
         except GoogleAdsException as exc:
             print(f"[google] orcamentos {cid}: {exc}")
+        # Somas das palavras-chave por (campanha, dia): usadas p/ descontar do total da
+        # campanha e nao contar a Pesquisa duas vezes.
+        kw_agg: dict = {}
         try:
-            # Palavras-chave (Pesquisa)
+            # Palavras-chave (Pesquisa) — alimentam a TABELA de palavras-chave.
             for batch in service.search_stream(customer_id=cid, query=kw_query):
                 for row in batch.results:
                     ch = row.campaign.advertising_channel_type.name
+                    a = kw_agg.setdefault((row.campaign.name, row.segments.date),
+                                          {"impressions": 0.0, "clicks": 0.0, "cost": 0.0,
+                                           "conversions": 0.0, "conversion_value": 0.0})
+                    a["impressions"] += float(row.metrics.impressions)
+                    a["clicks"] += float(row.metrics.clicks)
+                    a["cost"] += row.metrics.cost_micros / 1_000_000.0
+                    a["conversions"] += float(row.metrics.conversions)
+                    a["conversion_value"] += float(row.metrics.conversions_value)
                     rows.append({
                         "date": row.segments.date,
                         "account": row.customer.descriptive_name,
@@ -215,9 +228,9 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "interactions": float(row.metrics.clicks),
                         "daily_budget": budget_map.get(row.campaign.name, 0.0),
                     })
-            # Demais campanhas (totais). Tenta COM metrics.video_views; se a API
-            # rejeitar o campo, refaz SEM ele (video_views=0) — senao perderiamos
-            # todas as campanhas nao-SEARCH desta conta.
+            # Totais por campanha (TODOS os canais). Tenta COM metrics.video_views; se a
+            # API rejeitar o campo, refaz SEM ele (video_views=0) — senao perderiamos
+            # todas as campanhas desta conta.
             try:
                 camp_batches = list(service.search_stream(customer_id=cid, query=camp_query))
             except GoogleAdsException as exc:
@@ -228,6 +241,25 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
             for batch in camp_batches:
                 for row in batch.results:
                     ch = row.campaign.advertising_channel_type.name
+                    impressions = float(row.metrics.impressions)
+                    clicks = float(row.metrics.clicks)
+                    cost = row.metrics.cost_micros / 1_000_000.0
+                    conversions = float(row.metrics.conversions)
+                    conv_value = float(row.metrics.conversions_value)
+                    # Pesquisa: as linhas por palavra-chave ja foram inseridas acima, entao
+                    # aqui entra so o RESIDUAL (total da campanha - o atribuido a palavras-
+                    # chave). Sem isto os totais ou duplicariam ou (como era antes, sem a
+                    # campanha) ficariam ABAIXO do Google Ads, que reporta no nivel da
+                    # campanha: cliques/conversoes sem palavra-chave correspondente sumiam.
+                    a = kw_agg.get((row.campaign.name, row.segments.date))
+                    if a:
+                        impressions = max(impressions - a["impressions"], 0.0)
+                        clicks = max(clicks - a["clicks"], 0.0)
+                        cost = max(cost - a["cost"], 0.0)
+                        conversions = max(conversions - a["conversions"], 0.0)
+                        conv_value = max(conv_value - a["conversion_value"], 0.0)
+                        if not (impressions or clicks or cost or conversions or conv_value):
+                            continue  # nada sobrou: tudo ja veio por palavra-chave
                     rows.append({
                         "date": row.segments.date,
                         "account": row.customer.descriptive_name,
@@ -238,16 +270,16 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "ad_group": "",
                         "keyword": "",
                         "match_type": "",
-                        "impressions": float(row.metrics.impressions),
-                        "clicks": float(row.metrics.clicks),
-                        "cost": row.metrics.cost_micros / 1_000_000.0,
-                        "conversions": float(row.metrics.conversions),
-                        "conversion_value": float(row.metrics.conversions_value),
+                        "impressions": impressions,
+                        "clicks": clicks,
+                        "cost": cost,
+                        "conversions": conversions,
+                        "conversion_value": conv_value,
                         # Views de vídeo (YouTube/Video). Na API v24 o campo e
                         # metrics.video_trueview_views (o antigo video_views nao existe
                         # mais). getattr = seguro caso o nome mude de novo entre versoes.
                         "video_views": float(getattr(row.metrics, "video_trueview_views", 0.0) or 0.0),
-                        "interactions": float(row.metrics.clicks),
+                        "interactions": clicks,
                         "daily_budget": budget_map.get(row.campaign.name, 0.0),
                     })
         except GoogleAdsException as exc:

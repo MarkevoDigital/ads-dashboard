@@ -17,6 +17,8 @@ import time
 import unicodedata
 from datetime import datetime, timedelta
 
+from tz_br import today_br
+
 import pandas as pd
 import requests
 
@@ -278,7 +280,7 @@ def fetch(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
 
     version = meta_cfg.get("api_version", "v21.0")
     obj_map = {**DEFAULT_OBJECTIVE_MAP, **(meta_cfg.get("objective_map") or {})}
-    until = datetime.today().date()
+    until = today_br()  # "hoje" no fuso de Brasilia, nao no do servidor
     since = until - timedelta(days=days - 1)
 
     rows = []
@@ -356,7 +358,7 @@ def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
     if not token:
         return pd.DataFrame()
     version = meta_cfg.get("api_version", "v21.0")
-    until = datetime.today().date()
+    until = today_br()  # "hoje" no fuso de Brasilia, nao no do servidor
     since = until - timedelta(days=days - 1)
     rows = []
     for account_id in _account_ids(meta_cfg, token, version):

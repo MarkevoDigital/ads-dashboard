@@ -19,6 +19,8 @@ from __future__ import annotations
 import unicodedata
 from datetime import datetime, timedelta
 
+from tz_br import today_br
+
 import pandas as pd
 
 from connectors.meta_api import BR_STATE_COORDS, _CITY_BY_NORM
@@ -71,7 +73,7 @@ def _objective(channel_name, campaign_name, override) -> str:
 
 
 def _date_range(days):
-    until = datetime.today().date()
+    until = today_br()  # "hoje" no fuso de Brasilia, nao no do servidor
     since = until - timedelta(days=days - 1)
     return since.isoformat(), until.isoformat()
 

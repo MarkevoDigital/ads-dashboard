@@ -16,6 +16,7 @@ import os
 import pandas as pd
 
 import metrics as M
+from tz_br import today_br
 
 
 def _window(df, start, end):
@@ -570,7 +571,9 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         # "Ultimos N dias" termina em ONTEM (exclui o dia de hoje), igual as plataformas de
         # anuncio (Meta/Google contam de ontem p/ tras). Limita ao ultimo dia COM dados,
         # p/ nao exibir dias finais vazios caso o cache esteja atrasado.
-        ontem = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
+        # "ontem" pela data de BRASILIA (as datas das linhas sao datas de calendario;
+        # usar o relogio do servidor podia virar o dia antes/depois da virada local).
+        ontem = pd.Timestamp(today_br()) - pd.Timedelta(days=1)
         end = min(ontem, max(all_dates))
         start = end - pd.Timedelta(days=days - 1)
         win = days

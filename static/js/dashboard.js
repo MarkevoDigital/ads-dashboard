@@ -96,7 +96,8 @@
     }
     if ($("report-client")) $("report-client").textContent = reportClient;
     $("src-info").textContent = "Fonte: " + (mi.fonte || "—") +
-      (mi.atualizado_em ? " · atualizado " + new Date(mi.atualizado_em).toLocaleString("pt-BR") : "");
+      (mi.atualizado_em ? " · atualizado " + new Date(mi.atualizado_em)
+        .toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "");
 
     if (data.vazio) {
       $("period-info").textContent = "";

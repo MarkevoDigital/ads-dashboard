@@ -21,6 +21,8 @@ import socket
 import time
 from datetime import datetime, timedelta
 
+from tz_br import today_br
+
 import pandas as pd
 import requests
 
@@ -346,7 +348,7 @@ def fetch(tiktok_cfg: dict, days: int = 60) -> pd.DataFrame:
     _ensure_dns()
     version = tiktok_cfg.get("api_version", "v1.3")
     obj_map = {**DEFAULT_OBJECTIVE_MAP, **(tiktok_cfg.get("objective_map") or {})}
-    until = datetime.today().date()
+    until = today_br()  # "hoje" no fuso de Brasilia, nao no do servidor
     since = until - timedelta(days=days - 1)
 
     adv_ids = _advertiser_ids(tiktok_cfg, token, version)

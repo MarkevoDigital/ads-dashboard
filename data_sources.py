@@ -19,6 +19,8 @@ import pickle
 import threading
 from datetime import datetime, timedelta
 
+from tz_br import now_br, to_br
+
 import numpy as np
 import pandas as pd
 import requests
@@ -423,7 +425,7 @@ class DataStore:
             self.google = _coerce(google_df, GOOGLE_COLUMNS, NUMERIC_GOOGLE)
             self.tiktok = _coerce(tiktok_df, TIKTOK_COLUMNS, NUMERIC_TIKTOK)
             self.geo = _coerce_geo(geo_df)
-            self.updated_at = datetime.now()
+            self.updated_at = now_br()
             self.source_label = label
             self._save_cache()
         return {
@@ -458,8 +460,11 @@ class DataStore:
                 return False
             with open(STORE_CACHE, "rb") as fh:
                 data = pickle.load(fh)
-            ts = data.get("updated_at")
-            if not ts or (datetime.now() - ts) > timedelta(hours=max_age_h):
+            # to_br: pickles antigos gravaram updated_at NAIVE; converte p/ Brasilia antes
+            # de comparar (comparar aware com naive levantaria TypeError e o cache nunca
+            # carregaria).
+            ts = to_br(data.get("updated_at"))
+            if not ts or (now_br() - ts) > timedelta(hours=max_age_h):
                 return False
             with self._lock:
                 self.meta = data["meta"]

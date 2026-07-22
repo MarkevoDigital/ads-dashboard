@@ -13,6 +13,8 @@ Observacoes:
 """
 from __future__ import annotations
 
+import re
+import socket
 import time
 import unicodedata
 from datetime import datetime, timedelta
@@ -23,6 +25,58 @@ import pandas as pd
 import requests
 
 GRAPH = "https://graph.facebook.com"
+_API_HOST = "graph.facebook.com"
+_dns_ready = False
+
+
+def _safe(msg) -> str:
+    """Remove o access_token de mensagens de erro. A Graph API leva o token na
+    QUERYSTRING, entao qualquer excecao de rede (ex.: falha de DNS) carrega a URL
+    inteira com o token — que ia parar em log (tmp/seed_cron.log) e em qualquer
+    lugar que exiba o erro."""
+    return re.sub(r"(access_token=)[^&\s\"']+", r"\1[REDACTED]", str(msg))
+
+
+def _ensure_dns() -> None:
+    """Garante que `graph.facebook.com` seja resolvivel.
+
+    Mesmo problema ja tratado no conector do TikTok: o resolver do us172 as vezes falha
+    para esse dominio ("Name or service not known"), o que zerava a descoberta de contas
+    e deixava o dashboard SEM DADOS DE META (o erro era engolido pelo try/except por
+    conta). Quando o DNS do sistema falha, resolvemos via DNS-over-HTTPS (Cloudflare
+    1.1.1.1, acessado por IP) e fixamos o IP no socket.getaddrinfo. O hostname original e
+    preservado, entao SNI/Host/certificado continuam corretos. Idempotente e no-op em
+    servidores com DNS saudavel."""
+    global _dns_ready
+    if _dns_ready:
+        return
+    try:
+        socket.getaddrinfo(_API_HOST, 443)
+        _dns_ready = True
+        return
+    except socket.gaierror:
+        pass
+    try:
+        resp = requests.get("https://1.1.1.1/dns-query",
+                            params={"name": _API_HOST, "type": "A"},
+                            headers={"Accept": "application/dns-json"}, timeout=15)
+        ips = [a["data"] for a in resp.json().get("Answer", []) if a.get("type") == 1]
+        if not ips:
+            print(f"[meta] DoH nao retornou IP para {_API_HOST}; DNS continua quebrado.")
+            return
+        ip = ips[0]
+        _orig = socket.getaddrinfo
+
+        def _patched(host, *args, **kwargs):
+            if host == _API_HOST:
+                return _orig(ip, *args, **kwargs)
+            return _orig(host, *args, **kwargs)
+
+        socket.getaddrinfo = _patched
+        _dns_ready = True
+        print(f"[meta] DNS do sistema falhou para {_API_HOST}; usando DoH -> {ip}.")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[meta] fallback DoH falhou: {exc}")
 
 # Objetivo da campanha (Meta) -> bucket do dashboard
 DEFAULT_OBJECTIVE_MAP = {
@@ -221,7 +275,7 @@ def _account_ids(meta_cfg: dict, token: str, version: str) -> list[str]:
             if aid:
                 out.append(f"act_{aid}")
     except Exception as exc:  # noqa: BLE001
-        print(f"[meta] descoberta de contas falhou: {exc}")
+        print(f"[meta] descoberta de contas falhou: {_safe(exc)}")
     print(f"[meta] {len(out)} contas descobertas automaticamente.")
     return out
 
@@ -259,7 +313,7 @@ def _thumbnails(account_id, token, version) -> dict:
             if _bisectable(exc) and lim > 5:
                 print(f"[meta] thumbnails {account_id}: pagina grande demais (limit={lim}), reduzindo")
                 continue
-            print(f"[meta] thumbnails/preview indisponiveis ({account_id}): {exc}")
+            print(f"[meta] thumbnails/preview indisponiveis ({account_id}): {_safe(exc)}")
             return mapa  # devolve o parcial que conseguiu
     return mapa
 
@@ -274,7 +328,7 @@ def _campaign_budgets(account_id, token, version) -> dict:
             if db:
                 out[c["id"]] = float(db) / 100.0
     except Exception as exc:  # noqa: BLE001
-        print(f"[meta] orcamentos (campanha) indisponiveis: {exc}")
+        print(f"[meta] orcamentos (campanha) indisponiveis: {_safe(exc)}")
     try:  # soma dos adsets (p/ campanhas sem CBO)
         url2 = f"{GRAPH}/{version}/{account_id}/adsets"
         adsum = {}
@@ -285,7 +339,7 @@ def _campaign_budgets(account_id, token, version) -> dict:
         for cid, v in adsum.items():
             out.setdefault(cid, v)
     except Exception as exc:  # noqa: BLE001
-        print(f"[meta] orcamentos (adset) indisponiveis: {exc}")
+        print(f"[meta] orcamentos (adset) indisponiveis: {_safe(exc)}")
     return out
 
 
@@ -303,6 +357,7 @@ def fetch(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
     token = meta_cfg.get("access_token")
     if not token:
         return pd.DataFrame()
+    _ensure_dns()
 
     version = meta_cfg.get("api_version", "v21.0")
     obj_map = {**DEFAULT_OBJECTIVE_MAP, **(meta_cfg.get("objective_map") or {})}
@@ -314,7 +369,7 @@ def fetch(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
         try:
             rows.extend(_fetch_account_rows(account_id, token, version, since, until, obj_map))
         except Exception as exc:  # noqa: BLE001
-            print(f"[meta] conta {account_id} falhou (ignorada): {exc}")
+            print(f"[meta] conta {account_id} falhou (ignorada): {_safe(exc)}")
     return pd.DataFrame(rows)
 
 
@@ -383,6 +438,7 @@ def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
     token = meta_cfg.get("access_token")
     if not token:
         return pd.DataFrame()
+    _ensure_dns()
     version = meta_cfg.get("api_version", "v21.0")
     until = today_br()  # "hoje" no fuso de Brasilia, nao no do servidor
     since = until - timedelta(days=days - 1)
@@ -405,5 +461,5 @@ def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
                     "lat": lat, "lng": lng, "clicks": float(r.get("clicks", 0) or 0),
                 })
         except Exception as exc:  # noqa: BLE001
-            print(f"[meta-geo] {account_id}: {exc}")
+            print(f"[meta-geo] {account_id}: {_safe(exc)}")
     return pd.DataFrame(rows)

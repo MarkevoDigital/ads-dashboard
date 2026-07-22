@@ -155,6 +155,23 @@ def _bisectable(exc) -> bool:
     return any(h in s for h in _BISECT_HINTS)
 
 
+# Rate limit da Meta (code 17 / subcode 2446079, "User request limit reached"). Diferente
+# dos erros acima: NAO adianta bisseccionar (dobraria o numero de chamadas e pioraria o
+# bloqueio) nem re-tentar em 1,5s — a janela da Meta se recupera em MINUTOS. Sem tratar
+# isto, todas as contas falhavam em sequencia, o fetch voltava vazio e o dashboard ficava
+# sem dados de Meta.
+_RATE_HINTS = (
+    "user request limit reached", "request limit reached", "rate limit",
+    '"code":17', '"code": 17', "2446079", "quantidade excessiva de chamadas",
+    "reduce the amount of requests", "calls to this api have exceeded",
+)
+
+
+def _rate_limited(exc) -> bool:
+    s = str(exc).lower()
+    return any(h in s for h in _RATE_HINTS)
+
+
 def _insights_windowed(url, params_base, since, until):
     """Busca /insights para [since, until] com resiliencia para contas grandes/instaveis:
     - tenta a janela; em erro 'grande demais'/instavel, divide o intervalo ao meio
@@ -167,6 +184,15 @@ def _insights_windowed(url, params_base, since, until):
         try:
             return _paged_get(url, params)
         except RuntimeError as exc:
+            # Rate limit: espera de verdade (minutos) e NAO bissecciona — dividir a janela
+            # so multiplicaria as chamadas e aprofundaria o bloqueio.
+            if _rate_limited(exc):
+                if attempt < 2:
+                    espera = 60 * (attempt + 1) * 2  # 120s, depois 240s
+                    print(f"[meta] rate limit; aguardando {espera}s antes de re-tentar")
+                    time.sleep(espera)
+                    continue
+                raise
             if since < until and _bisectable(exc):
                 mid = since + (until - since) // 2
                 return (_insights_windowed(url, params_base, since, mid)

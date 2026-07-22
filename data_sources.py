@@ -538,18 +538,24 @@ class DataStore:
                     print(f"[tiktok] fetch falhou: {exc}")
             if meta_df.empty and google_df.empty and tiktok_df.empty:
                 raise RuntimeError("API sem dados (verifique tokens/contas).")
-            # Falha PARCIAL do Google: se ha credenciais Google configuradas mas o fetch
-            # voltou VAZIO — tipicamente a descoberta de contas sob o MCC falhou por limite
-            # de processos/grpc (nproc/LVE) — NAO persistimos um cache com Google zerado
-            # para TODOS os clientes. Abortamos o refresh p/ preservar o ultimo cache bom;
-            # o proximo seed recupera. So dispara quando o Meta veio com dados (sinal de que
-            # a conexao geral esta ok e o Google vazio e anomalo, nao "conta sem veiculacao").
+            # Falha PARCIAL de UMA plataforma: se ela esta configurada mas voltou VAZIA
+            # enquanto a OUTRA trouxe dados, isso e anomalo (token expirado, descoberta de
+            # contas falhando por nproc/grpc, rate limit...) e NAO pode virar cache: gravar
+            # zeros apaga os dados de todos os clientes daquela plataforma. Abortamos o
+            # refresh para preservar o ultimo cache bom; o proximo seed recupera.
+            # (Os conectores engolem erro por conta e retornam DataFrame vazio, entao sem
+            # este guard a falha passaria silenciosa.)
             g_api = api.get("google_ads", {})
             google_ligado = bool(g_api.get("developer_token") and g_api.get("refresh_token")
                                  and (g_api.get("customer_ids") or g_api.get("login_customer_id")))
+            meta_ligado = bool(api.get("meta", {}).get("access_token"))
             if google_ligado and google_df.empty and not meta_df.empty:
                 raise RuntimeError("Google Ads configurado retornou 0 linhas (descoberta/fetch "
                                    "falhou) — refresh abortado para preservar o cache anterior.")
+            if meta_ligado and meta_df.empty and not google_df.empty:
+                raise RuntimeError("Meta Ads configurado retornou 0 linhas (token expirado? "
+                                   "contas inacessiveis?) — refresh abortado para preservar o "
+                                   "cache anterior.")
             geo_frames = []
             try:
                 geo_frames.append(meta_api.fetch_geo(api.get("meta", {}), dias))

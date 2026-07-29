@@ -176,13 +176,20 @@ def _objective_blocks(meta_cur, google_cur, meta_prev, google_prev,
 # ----------------------------------------------------------------------------
 # Serie temporal
 # ----------------------------------------------------------------------------
-def _time_series(meta_cur, google_cur, tiktok_cur=None) -> dict:
+def _time_series(meta_cur, google_cur, tiktok_cur=None, start=None, end=None) -> dict:
     """Evolucao diaria: Investimento (barra) x Cliques e Conversoes (linhas).
 
     Conversoes = soma de todos os desfechos (conversoes + leads + conversas).
+
+    Quando start/end sao dados (janela "ultimos N dias"), percorre TODOS os dias do
+    intervalo de calendario — os dias sem entrega aparecem zerados, em vez de sumirem do
+    grafico (casa com a predefinicao de datas por calendario, mesmo com dados atrasados).
     """
-    tk_days = set(tiktok_cur["date"]) if tiktok_cur is not None and not tiktok_cur.empty else set()
-    days = sorted(set(meta_cur["date"]).union(set(google_cur["date"])).union(tk_days))
+    if start is not None and end is not None:
+        days = list(pd.date_range(pd.Timestamp(start).normalize(), pd.Timestamp(end).normalize(), freq="D"))
+    else:
+        tk_days = set(tiktok_cur["date"]) if tiktok_cur is not None and not tiktok_cur.empty else set()
+        days = sorted(set(meta_cur["date"]).union(set(google_cur["date"])).union(tk_days))
     labels, spend_s, clicks_s, conv_s = [], [], [], []
     for d in days:
         md = meta_cur[meta_cur["date"] == d]
@@ -343,6 +350,57 @@ def _campaigns(meta_cur, google_cur, tiktok_cur=None) -> list[dict]:
     return rows
 
 
+def _ad_sets(meta_cur, google_cur, tiktok_cur=None) -> list[dict]:
+    """Desempenho por CONJUNTO DE ANUNCIOS (Meta/TikTok = coluna 'adset') e por GRUPO DE
+    RECURSOS/ANUNCIOS do Google (coluna 'ad_group' — grupos de anuncio da Pesquisa e grupos
+    de recursos da PMax). Mesmo formato das tabelas de campanhas e anuncios; cada linha traz
+    a 'campanha' a que o conjunto pertence, para o filtro por campanha no front."""
+    rows = []
+    sources = [("Meta", meta_cur, True, "adset"), ("Google", google_cur, False, "ad_group"),
+               ("TikTok", tiktok_cur, True, "adset")]
+    for plat, df, is_meta, gcol in sources:
+        if df is None or df.empty or gcol not in df.columns:
+            continue
+        spend_col = "spend" if is_meta else "cost"
+        last = df["date"].max()
+        for (camp, conj), g in df.groupby(["campaign", gcol], dropna=False):
+            conj = str(conj)
+            if conj.strip().lower() in ("", "nan", "none", "—") or not str(camp).strip():
+                continue
+            objs = g["objective"].mode()
+            obj = objs.iloc[0] if len(objs) else "outros"
+            cfg = M.objective_config(obj)
+            spend = float(g[spend_col].sum())
+            impr = float(g["impressions"].sum())
+            clk = float(g["clicks"].sum())
+            gl = g[g["date"] == last] if last is not None else g.iloc[0:0]
+            ativo = bool(len(gl) and (float(gl[spend_col].sum()) > 0
+                                      or float(gl["impressions"].sum()) > 0))
+            if is_meta:
+                col = _META_CONV_COL.get(cfg.get("conv_key"))
+                conv = float(g[col].sum()) if col and col in g.columns else 0.0
+                video = float(g["video_views"].sum()) if "video_views" in g.columns else 0.0
+                ig_visits = float(g["profile_visits"].sum()) if "profile_visits" in g.columns else 0.0
+                eng = float(g["engagement"].sum()) if "engagement" in g.columns else 0.0
+            else:
+                conv = float(g["conversions"].sum())
+                video = float(g["video_views"].sum()) if "video_views" in g.columns else 0.0
+                ig_visits = 0.0
+                eng = 0.0
+            rows.append({
+                "plataforma": plat, "campanha": str(camp), "conjunto": conj,
+                "objetivo": cfg["label"], "spend": round(spend, 2),
+                "impressions": int(impr), "clicks": int(clk),
+                "ctr": round(clk / impr, 4) if impr else 0.0,
+                "conversions": round(conv, 1),
+                "cpa": round(spend / conv, 2) if conv else 0.0,
+                "video_views": int(video), "profile_visits": int(ig_visits),
+                "engagement": int(eng), "ativo": ativo,
+            })
+    rows.sort(key=lambda r: (r["conversions"], r["spend"]), reverse=True)
+    return rows
+
+
 def _ads(meta_cur, tiktok_cur=None) -> list[dict]:
     """Anuncios veiculados (Meta e TikTok), agrupados por nome+campanha. Meta e TikTok
     tem dados por anuncio; o Google e nivel campanha/palavra-chave. Mesmo formato da
@@ -351,8 +409,15 @@ def _ads(meta_cur, tiktok_cur=None) -> list[dict]:
     for plat, df in [("Meta", meta_cur), ("TikTok", tiktok_cur)]:
         if df is None or df.empty:
             continue
+        has_adset = "adset" in df.columns
         last = df["date"].max()
-        for (ad, camp), g in df.groupby(["ad_name", "campaign"], dropna=False):
+        # Agrupa tambem por CONJUNTO (adset): permite o filtro por conjunto na tabela e e
+        # mais fiel (um anuncio pode rodar em conjuntos distintos). Sem a coluna, fica "".
+        keys = ["ad_name", "campaign", "adset"] if has_adset else ["ad_name", "campaign"]
+        for gkey, g in df.groupby(keys, dropna=False):
+            ad, camp = gkey[0], gkey[1]
+            conjunto = gkey[2] if has_adset else ""
+            conjunto = "" if str(conjunto).strip().lower() in ("", "nan", "none", "—") else str(conjunto)
             if not str(ad).strip():
                 continue
             impr = float(g["impressions"].sum())
@@ -369,6 +434,7 @@ def _ads(meta_cur, tiktok_cur=None) -> list[dict]:
             ativo = bool(len(gl) and (float(gl["spend"].sum()) > 0 or float(gl["impressions"].sum()) > 0))
             rows.append({
                 "plataforma": plat, "anuncio": str(ad), "campanha": str(camp),
+                "conjunto": conjunto,
                 "objetivo": cfg["label"], "spend": round(spend, 2),
                 "impressions": int(impr), "clicks": int(clk),
                 "ctr": round(clk / impr, 4) if impr else 0.0,
@@ -568,13 +634,13 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         start, end = rng
         win = (end - start).days + 1
     else:
-        # "Ultimos N dias" termina em ONTEM (exclui o dia de hoje), igual as plataformas de
-        # anuncio (Meta/Google contam de ontem p/ tras). Limita ao ultimo dia COM dados,
-        # p/ nao exibir dias finais vazios caso o cache esteja atrasado.
-        # "ontem" pela data de BRASILIA (as datas das linhas sao datas de calendario;
+        # "Ultimos N dias" = janela de CALENDARIO terminando em ONTEM (exclui hoje), igual
+        # as plataformas de anuncio (Meta/Google contam de ontem p/ tras). A janela e sempre
+        # de N dias corridos ate ontem, MESMO que os dias finais estejam zerados (ex.: conta
+        # sem veiculacao recente) — reflete o calendario vigente, nao "os ultimos N dias com
+        # dados". "ontem" pela data de BRASILIA (as datas das linhas sao datas de calendario;
         # usar o relogio do servidor podia virar o dia antes/depois da virada local).
-        ontem = pd.Timestamp(today_br()) - pd.Timedelta(days=1)
-        end = min(ontem, max(all_dates))
+        end = pd.Timestamp(today_br()) - pd.Timedelta(days=1)
         start = end - pd.Timedelta(days=days - 1)
         win = days
     prev_end = start - pd.Timedelta(days=1)
@@ -612,10 +678,11 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         "funil": _funnel(meta_cur, google_cur, tiktok_cur),
         "investimento": _investimento(meta_cur, google_cur, meta_prev, google_prev, tiktok_cur, tiktok_prev),
         "blocos_objetivo": blocks,
-        "serie_temporal": _time_series(meta_cur, google_cur, tiktok_cur),
+        "serie_temporal": _time_series(meta_cur, google_cur, tiktok_cur, start, end),
         "melhores_anuncios": _best_ads(meta_cur),
         "palavras_chave": _keywords(google_cur),
         "campanhas": _campaigns(meta_cur, google_cur, tiktok_cur),
+        "conjuntos": _ad_sets(meta_cur, google_cur, tiktok_cur),
         "anuncios": _ads(meta_cur, tiktok_cur),
         "geo": _geo(store.geo, scope, start, end, "estado"),
         "geo_cidades": _geo(store.geo, scope, start, end, "cidade"),

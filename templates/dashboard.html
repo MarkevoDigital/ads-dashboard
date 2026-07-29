@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard de Ads — Meta + Google</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=19">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -98,6 +98,20 @@
       <div id="campaigns-wrap" class="table-wrap"></div>
     </section>
 
+    <!-- Conjuntos de anúncios / Grupos de recursos -->
+    <section class="card" id="adsets-table-section">
+      <div class="card-head">
+        <div>
+          <h2>🎯 Conjuntos de anúncios / Grupos de recursos</h2>
+          <p class="hint">Conjuntos de anúncios (Meta) e grupos de anúncios/recursos (Google) com veiculação no período.</p>
+        </div>
+        <label class="tbl-filter">Campanha
+          <select id="f-adset-camp" data-all="Todas as campanhas"><option value="">Todas as campanhas</option></select>
+        </label>
+      </div>
+      <div id="adsets-wrap" class="table-wrap"></div>
+    </section>
+
     <!-- Blocos por objetivo (cards; metricas zeradas sao ocultadas) -->
     <section id="objective-blocks"></section>
 
@@ -110,8 +124,20 @@
 
     <!-- Anuncios veiculados (Meta) -->
     <section class="card" id="ads-table-section">
-      <h2>🖼️ Anúncios veiculados</h2>
-      <p class="hint">Anúncios do Meta com entrega no período, agrupados por nome e campanha.</p>
+      <div class="card-head">
+        <div>
+          <h2>🖼️ Anúncios veiculados</h2>
+          <p class="hint">Anúncios do Meta com entrega no período, agrupados por nome, campanha e conjunto.</p>
+        </div>
+        <div class="tbl-filters">
+          <label class="tbl-filter">Campanha
+            <select id="f-ads-camp" data-all="Todas as campanhas"><option value="">Todas as campanhas</option></select>
+          </label>
+          <label class="tbl-filter">Conjunto
+            <select id="f-ads-conj" data-all="Todos os conjuntos" disabled><option value="">Todos os conjuntos</option></select>
+          </label>
+        </div>
+      </div>
       <div id="ads-wrap" class="table-wrap"></div>
     </section>
 
@@ -154,6 +180,6 @@
   <div id="loading" class="loading hidden">Carregando…</div>
   <footer class="foot">Atualização automática diária · Meta Ads + Google Ads</footer>
 
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=19"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20"></script>
 </body>
 </html>

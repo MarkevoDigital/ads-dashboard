@@ -179,6 +179,18 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
         FROM campaign
         WHERE segments.date BETWEEN '{since}' AND '{until}'
     """
+    # Grupos de RECURSOS da Performance Max (asset_group). Igual a Pesquisa: entram como
+    # detalhe (tabela de conjuntos/grupos) e sao descontados do total da campanha (residual)
+    # p/ nao contar duas vezes. Query separada e resiliente (se a API rejeitar, PMax so fica
+    # sem o detalhamento por grupo — o total da campanha continua correto).
+    ag_query = f"""
+        SELECT segments.date, customer.descriptive_name, campaign.name,
+               campaign.advertising_channel_type, asset_group.name,
+               metrics.impressions, metrics.clicks, metrics.cost_micros,
+               metrics.conversions, metrics.conversions_value
+        FROM asset_group
+        WHERE segments.date BETWEEN '{since}' AND '{until}'
+    """
     # orcamento diario por campanha (query separada -> nao quebra o fetch principal)
     budget_query = "SELECT campaign.name, campaign_budget.amount_micros FROM campaign"
 
@@ -192,15 +204,15 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                     budget_map[row.campaign.name] = row.campaign_budget.amount_micros / 1_000_000.0
         except GoogleAdsException as exc:
             print(f"[google] orcamentos {cid}: {exc}")
-        # Somas das palavras-chave por (campanha, dia): usadas p/ descontar do total da
-        # campanha e nao contar a Pesquisa duas vezes.
-        kw_agg: dict = {}
+        # Somas dos DETALHES por (campanha, dia) — palavras-chave (Pesquisa) e grupos de
+        # recursos (PMax): usadas p/ descontar do total da campanha e nao contar 2x.
+        sub_agg: dict = {}
         try:
             # Palavras-chave (Pesquisa) — alimentam a TABELA de palavras-chave.
             for batch in service.search_stream(customer_id=cid, query=kw_query):
                 for row in batch.results:
                     ch = row.campaign.advertising_channel_type.name
-                    a = kw_agg.setdefault((row.campaign.name, row.segments.date),
+                    a = sub_agg.setdefault((row.campaign.name, row.segments.date),
                                           {"impressions": 0.0, "clicks": 0.0, "cost": 0.0,
                                            "conversions": 0.0, "conversion_value": 0.0})
                     a["impressions"] += float(row.metrics.impressions)
@@ -228,6 +240,42 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "interactions": float(row.metrics.clicks),
                         "daily_budget": budget_map.get(row.campaign.name, 0.0),
                     })
+            # Grupos de recursos (Performance Max) — alimentam a tabela de conjuntos/grupos
+            # e entram no residual da campanha. try/except proprio: se a API nao suportar o
+            # relatorio asset_group, apenas nao detalha PMax (sem derrubar o resto da conta).
+            try:
+                for batch in service.search_stream(customer_id=cid, query=ag_query):
+                    for row in batch.results:
+                        ch = row.campaign.advertising_channel_type.name
+                        a = sub_agg.setdefault((row.campaign.name, row.segments.date),
+                                               {"impressions": 0.0, "clicks": 0.0, "cost": 0.0,
+                                                "conversions": 0.0, "conversion_value": 0.0})
+                        a["impressions"] += float(row.metrics.impressions)
+                        a["clicks"] += float(row.metrics.clicks)
+                        a["cost"] += row.metrics.cost_micros / 1_000_000.0
+                        a["conversions"] += float(row.metrics.conversions)
+                        a["conversion_value"] += float(row.metrics.conversions_value)
+                        rows.append({
+                            "date": row.segments.date,
+                            "account": row.customer.descriptive_name,
+                            "account_id": cid,
+                            "objective": _objective(ch, row.campaign.name, override),
+                            "campaign": row.campaign.name,
+                            "campaign_type": ch,
+                            "ad_group": row.asset_group.name,
+                            "keyword": "",
+                            "match_type": "",
+                            "impressions": float(row.metrics.impressions),
+                            "clicks": float(row.metrics.clicks),
+                            "cost": row.metrics.cost_micros / 1_000_000.0,
+                            "conversions": float(row.metrics.conversions),
+                            "conversion_value": float(row.metrics.conversions_value),
+                            "video_views": 0.0,
+                            "interactions": float(row.metrics.clicks),
+                            "daily_budget": budget_map.get(row.campaign.name, 0.0),
+                        })
+            except Exception as exc:  # noqa: BLE001
+                print(f"[google] asset_groups {cid}: {exc}")
             # Totais por campanha (TODOS os canais). Tenta COM metrics.video_views; se a
             # API rejeitar o campo, refaz SEM ele (video_views=0) — senao perderiamos
             # todas as campanhas desta conta.
@@ -251,7 +299,7 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                     # chave). Sem isto os totais ou duplicariam ou (como era antes, sem a
                     # campanha) ficariam ABAIXO do Google Ads, que reporta no nivel da
                     # campanha: cliques/conversoes sem palavra-chave correspondente sumiam.
-                    a = kw_agg.get((row.campaign.name, row.segments.date))
+                    a = sub_agg.get((row.campaign.name, row.segments.date))
                     if a:
                         impressions = max(impressions - a["impressions"], 0.0)
                         clicks = max(clicks - a["clicks"], 0.0)

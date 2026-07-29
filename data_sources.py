@@ -189,6 +189,12 @@ def _coerce(df: pd.DataFrame, columns: list[str], numeric: list[str]) -> pd.Data
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     for col in numeric:
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+    # Colunas de TEXTO: NaN vira "" (ex.: keyword/ad_group/adset vazios, que o read_csv le
+    # como NaN). Sem isto, um texto nulo viraria `NaN` no JSON — invalido p/ o JSON.parse do
+    # navegador, quebrando TODO o render do dashboard.
+    text_cols = [c for c in columns if c not in numeric and c != "date"]
+    if text_cols:
+        df[text_cols] = df[text_cols].fillna("")
     df = df.dropna(subset=["date"])
     # objetivo normalizado em minusculas/sem espacos
     df["objective"] = (
@@ -256,13 +262,15 @@ def _synthesize(days: int = 75):
     ]
 
     google_plan = [
-        ("Loja Moda Bella", "vendas", "PMax | Loja Online", "Performance Max", "—",
-         ["vestido floral", "roupa feminina online", "moda praia", "comprar vestido"],
-         (150, 280)),
+        # PMax: dois GRUPOS DE RECURSOS na mesma campanha (sem palavra-chave)
+        ("Loja Moda Bella", "vendas", "PMax | Loja Online", "Performance Max",
+         "Grupo de recursos — Vestidos", [""], (80, 150)),
+        ("Loja Moda Bella", "vendas", "PMax | Loja Online", "Performance Max",
+         "Grupo de recursos — Moda Praia", [""], (60, 130)),
         ("Loja Moda Bella", "video", "Video | YouTube Colecao", "Video", "—",
          [""],
          (30, 70)),
-        ("Clinica Sorriso", "leads", "Search | Implante", "Search", "Implante Dentario",
+        ("Clinica Sorriso", "leads", "Search | Implante", "Search", "Grupo de anúncios — Implante",
          ["implante dentario preco", "clinica implante dentario", "dentista perto de mim",
           "implante dentario sao paulo"],
          (110, 200)),

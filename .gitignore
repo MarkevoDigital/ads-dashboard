@@ -25,3 +25,5 @@ sample_data/*.csv
 # cache do store em disco (runtime)
 tmp/store_cache.pkl
 tmp/*.pkl
+
+.venv-preview/

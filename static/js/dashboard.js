@@ -111,7 +111,7 @@
       $("objective-blocks").innerHTML = "";
       $("best-ads").innerHTML = `<div class="empty">${data.carregando ? "Carregando…" : "Sem anúncios."}</div>`;
       $("keywords-wrap").innerHTML = ""; $("campaigns-wrap").innerHTML = "";
-      $("ads-wrap").innerHTML = "";
+      $("ads-wrap").innerHTML = ""; $("adsets-wrap").innerHTML = "";
       $("geo-section").classList.add("hidden");
       $("tiktok-section").classList.add("hidden");
       return;
@@ -130,6 +130,7 @@
     renderObjectiveBlocks(data.blocos_objetivo);
     renderTrend(data.serie_temporal);
     renderBestAds(data.melhores_anuncios);
+    renderAdSets(data.conjuntos);
     renderAds(data.anuncios);
     // TikTok: opção no seletor de plataforma + seção dedicada (data-driven: só p/ clientes
     // com TikTok). ensurePlatformOption insere/remove a opção conforme tem_tiktok.
@@ -347,15 +348,47 @@
       <tbody>${body}</tbody></table>`;
   }
 
-  // ---- Anúncios veiculados (Meta) ----
-  function renderAds(rows) {
-    const wrap = $("ads-wrap");
-    if (!rows || !rows.length) { wrap.innerHTML = `<div class="empty">Sem anúncios veiculados no período.</div>`; return; }
-    const extra = [
+  // Escapa texto p/ uso seguro em atributos/opcoes (nomes com &, <, >, ").
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // Repovoa um <select> preservando a selecao atual (se ainda existir nas opcoes).
+  function fillSelectPreserve(sel, values) {
+    const cur = sel.value;
+    const allLabel = sel.dataset.all || "Todos";
+    sel.innerHTML = `<option value="">${esc(allLabel)}</option>` +
+      values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+    sel.value = values.includes(cur) ? cur : "";
+  }
+
+  // Colunas extras (views vídeo, visitas IG, engaj.) só quando há valor > 0. Compartilhado
+  // pelas tabelas de conjuntos e de anúncios.
+  function extraCols(rows) {
+    return [
       { key: "video_views", label: "Views vídeo", fmt: "int" },
       { key: "profile_visits", label: "Visitas IG", fmt: "int" },
       { key: "engagement", label: "Engaj.", fmt: "int" },
     ].filter((c) => rows.some((r) => (r[c.key] || 0) > 0));
+  }
+
+  // ---- Conjuntos de anúncios / Grupos de recursos ----
+  let _adsetData = [];
+  function renderAdSets(rows) {
+    _adsetData = rows || [];
+    const camps = [...new Set(_adsetData.map((r) => r.campanha))].sort((a, b) => a.localeCompare(b, "pt"));
+    fillSelectPreserve($("f-adset-camp"), camps);
+    drawAdSets();
+  }
+  function drawAdSets() {
+    const wrap = $("adsets-wrap");
+    const camp = $("f-adset-camp").value;
+    let rows = _adsetData;
+    if (camp) rows = rows.filter((r) => r.campanha === camp);
+    if (!rows.length) {
+      wrap.innerHTML = `<div class="empty">Sem conjuntos/grupos no período${camp ? " para esta campanha" : ""}.</div>`;
+      return;
+    }
+    const extra = extraCols(rows);
     const extraHead = extra.map((c) => `<th>${c.label}</th>`).join("");
     const body = rows.map((r) => {
       const extraCells = extra.map((c) => `<td>${fmt(r[c.key], c.fmt)}</td>`).join("");
@@ -363,13 +396,65 @@
       return `<tr>
         <td class="status-cell">${dot}</td>
         <td><span class="plat ${r.plataforma.toLowerCase()}">${r.plataforma}</span></td>
-        <td>${r.anuncio}</td><td>${r.campanha}</td><td>${r.objetivo}</td>
+        <td>${r.campanha}</td><td>${esc(r.conjunto)}</td><td>${r.objetivo}</td>
         <td>${fmt(r.spend, "currency")}</td><td>${fmt(r.impressions, "int")}</td>
         <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.ctr, "pct")}</td>
         <td>${fmt(r.conversions, "int")}</td><td>${fmt(r.cpa, "currency")}</td>${extraCells}</tr>`;
     }).join("");
     wrap.innerHTML = `<table><thead><tr><th title="Verde = em veiculação · Vermelho = inativo">●</th>
-      <th>Plataforma</th><th>Anúncio</th><th>Campanha</th><th>Objetivo</th>
+      <th>Plataforma</th><th>Campanha</th><th>Conjunto / Grupo</th><th>Objetivo</th>
+      <th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
+      <tbody>${body}</tbody></table>`;
+  }
+
+  // ---- Anúncios veiculados (Meta) ----
+  let _adsData = [];
+  function renderAds(rows) {
+    _adsData = rows || [];
+    const camps = [...new Set(_adsData.map((r) => r.campanha))].sort((a, b) => a.localeCompare(b, "pt"));
+    fillSelectPreserve($("f-ads-camp"), camps);
+    syncAdsConj();
+    drawAds();
+  }
+  // O filtro por Conjunto só é clicável após escolher uma Campanha, e lista os conjuntos
+  // daquela campanha.
+  function syncAdsConj() {
+    const selC = $("f-ads-camp"), selS = $("f-ads-conj");
+    if (!selC.value) {
+      selS.value = ""; selS.disabled = true;
+      selS.innerHTML = `<option value="">${esc(selS.dataset.all || "Todos")}</option>`;
+      return;
+    }
+    selS.disabled = false;
+    const conj = [...new Set(_adsData.filter((r) => r.campanha === selC.value)
+      .map((r) => r.conjunto).filter((c) => c))].sort((a, b) => a.localeCompare(b, "pt"));
+    fillSelectPreserve(selS, conj);
+  }
+  function drawAds() {
+    const wrap = $("ads-wrap");
+    const camp = $("f-ads-camp").value, conj = $("f-ads-conj").value;
+    let rows = _adsData;
+    if (camp) rows = rows.filter((r) => r.campanha === camp);
+    if (camp && conj) rows = rows.filter((r) => r.conjunto === conj);
+    if (!rows.length) {
+      wrap.innerHTML = `<div class="empty">Sem anúncios veiculados no período${camp ? " para este filtro" : ""}.</div>`;
+      return;
+    }
+    const extra = extraCols(rows);
+    const extraHead = extra.map((c) => `<th>${c.label}</th>`).join("");
+    const body = rows.map((r) => {
+      const extraCells = extra.map((c) => `<td>${fmt(r[c.key], c.fmt)}</td>`).join("");
+      const dot = `<span class="status-dot ${r.ativo ? "on" : "off"}" title="${r.ativo ? "Em veiculação" : "Não ativo no momento"}"></span>`;
+      return `<tr>
+        <td class="status-cell">${dot}</td>
+        <td><span class="plat ${r.plataforma.toLowerCase()}">${r.plataforma}</span></td>
+        <td>${r.anuncio}</td><td>${r.campanha}</td><td>${esc(r.conjunto || "—")}</td><td>${r.objetivo}</td>
+        <td>${fmt(r.spend, "currency")}</td><td>${fmt(r.impressions, "int")}</td>
+        <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.ctr, "pct")}</td>
+        <td>${fmt(r.conversions, "int")}</td><td>${fmt(r.cpa, "currency")}</td>${extraCells}</tr>`;
+    }).join("");
+    wrap.innerHTML = `<table><thead><tr><th title="Verde = em veiculação · Vermelho = inativo">●</th>
+      <th>Plataforma</th><th>Anúncio</th><th>Campanha</th><th>Conjunto</th><th>Objetivo</th>
       <th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
       <tbody>${body}</tbody></table>`;
   }
@@ -523,6 +608,10 @@
   });
   $("f-start").addEventListener("change", () => { if ($("f-end").value) load(); });
   $("f-end").addEventListener("change", () => { if ($("f-start").value) load(); });
+  // Filtros das tabelas (client-side; não recarregam dados, só re-filtram o já carregado).
+  $("f-adset-camp").addEventListener("change", drawAdSets);
+  $("f-ads-camp").addEventListener("change", () => { syncAdsConj(); drawAds(); });
+  $("f-ads-conj").addEventListener("change", drawAds);
   // Admin troca de cliente: zera a conta selecionada e força repopular as contas.
   $("f-client").addEventListener("change", () => {
     $("f-account").value = "todas"; accountsSig = null; load();

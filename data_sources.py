@@ -19,7 +19,7 @@ import pickle
 import threading
 from datetime import datetime, timedelta
 
-from tz_br import now_br, to_br
+from tz_br import now_br, to_br, today_br
 
 import numpy as np
 import pandas as pd
@@ -64,6 +64,11 @@ NUMERIC_GEO = ["lat", "lng", "clicks"]
 # clientes com tiktok_advertiser_ids; senao fica vazio e o TikTok nao aparece.
 TIKTOK_COLUMNS = META_COLUMNS
 NUMERIC_TIKTOK = NUMERIC_META
+
+# Instagram (organico): seguidores por conta e por dia. Vem da Instagram Graph API
+# com o MESMO token do Meta Ads (escopos instagram_basic/instagram_manage_insights).
+INSTAGRAM_COLUMNS = ["date", "ig_id", "username", "account", "new_followers", "followers_total"]
+NUMERIC_INSTAGRAM = ["new_followers", "followers_total"]
 
 
 # ----------------------------------------------------------------------------
@@ -175,6 +180,8 @@ def load_clients() -> dict:
         c["_google_ids"] = {only_digits(x) for x in c.get("google_customer_ids", []) if x}
         # TikTok: so clientes com tiktok_advertiser_ids veem dados/secao TikTok.
         c["_tiktok_ids"] = {only_digits(x) for x in c.get("tiktok_advertiser_ids", []) if x}
+        # Instagram: so clientes com instagram_ids veem a secao de seguidores.
+        c["_instagram_ids"] = {only_digits(x) for x in c.get("instagram_ids", []) if x}
     return data
 
 
@@ -196,10 +203,12 @@ def _coerce(df: pd.DataFrame, columns: list[str], numeric: list[str]) -> pd.Data
     if text_cols:
         df[text_cols] = df[text_cols].fillna("")
     df = df.dropna(subset=["date"])
-    # objetivo normalizado em minusculas/sem espacos
-    df["objective"] = (
-        df["objective"].astype(str).str.strip().str.lower().replace("", "outros")
-    )
+    # objetivo normalizado em minusculas/sem espacos (so nos schemas de Ads; o do
+    # Instagram, por exemplo, nao tem essa coluna)
+    if "objective" in df.columns:
+        df["objective"] = (
+            df["objective"].astype(str).str.strip().str.lower().replace("", "outros")
+        )
     return df
 
 
@@ -385,6 +394,27 @@ def _synthesize(days: int = 75):
     return (pd.DataFrame(meta_rows), pd.DataFrame(google_rows), pd.DataFrame(geo_rows))
 
 
+def _synthesize_instagram(days: int = 60) -> pd.DataFrame:
+    """Seguidores de exemplo (modo sample), para desenvolver/testar a secao sem API."""
+    rng = np.random.default_rng(7)
+    end = pd.Timestamp(today_br()) - pd.Timedelta(days=1)
+    plano = [
+        ("17841400000000001", "lojamodabella", "Loja Moda Bella", 18420, (25, 90)),
+        ("17841400000000002", "clinicasorriso", "Clínica Sorriso", 4310, (5, 28)),
+        ("17841400000000003", "restaurantesabor", "Restaurante Sabor", 9765, (10, 45)),
+    ]
+    rows = []
+    for ig_id, user, page, total, (lo, hi) in plano:
+        for i in range(days):
+            d = (end - pd.Timedelta(days=days - 1 - i)).date()
+            rows.append({
+                "date": d.isoformat(), "ig_id": ig_id, "username": user, "account": page,
+                "new_followers": float(int(rng.integers(lo, hi))),
+                "followers_total": float(total),
+            })
+    return pd.DataFrame(rows, columns=INSTAGRAM_COLUMNS)
+
+
 def _ensure_sample_files():
     """Grava os CSVs de exemplo em sample_data/ (modelo de planilha + geo)."""
     os.makedirs(SAMPLE_DIR, exist_ok=True)
@@ -421,6 +451,7 @@ class DataStore:
         self.meta = pd.DataFrame(columns=META_COLUMNS)
         self.google = pd.DataFrame(columns=GOOGLE_COLUMNS)
         self.tiktok = pd.DataFrame(columns=TIKTOK_COLUMNS)
+        self.instagram = pd.DataFrame(columns=INSTAGRAM_COLUMNS)
         self.geo = pd.DataFrame(columns=GEO_COLUMNS)
         self.updated_at: datetime | None = None
         self.source_label = "—"
@@ -432,6 +463,7 @@ class DataStore:
             self.meta = _coerce(meta_df, META_COLUMNS, NUMERIC_META)
             self.google = _coerce(google_df, GOOGLE_COLUMNS, NUMERIC_GOOGLE)
             self.tiktok = _coerce(tiktok_df, TIKTOK_COLUMNS, NUMERIC_TIKTOK)
+            self.instagram = _coerce(self._load_instagram(label), INSTAGRAM_COLUMNS, NUMERIC_INSTAGRAM)
             self.geo = _coerce_geo(geo_df)
             self.updated_at = now_br()
             self.source_label = label
@@ -442,7 +474,23 @@ class DataStore:
             "meta_rows": len(self.meta),
             "google_rows": len(self.google),
             "tiktok_rows": len(self.tiktok),
+            "instagram_rows": len(self.instagram),
         }
+
+    def _load_instagram(self, label: str) -> pd.DataFrame:
+        """Seguidores do Instagram (organico). Fica FORA do _load_raw de proposito:
+        e uma fonte independente (Instagram Graph API) e nunca pode derrubar o Ads —
+        qualquer falha aqui vira DataFrame vazio e o dashboard segue normal."""
+        api = self.config.get("api", {})
+        dias = int(api.get("dias_busca", 60))
+        if label == "Dados de exemplo":
+            return _synthesize_instagram(min(dias, 60))
+        try:
+            from connectors import instagram_api
+            return instagram_api.fetch(api.get("meta", {}), dias)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[instagram] fetch falhou (ignorado): {exc}")
+            return pd.DataFrame(columns=INSTAGRAM_COLUMNS)
 
     def _save_cache(self) -> None:
         """Persiste o store em disco (best-effort). Chamado dentro do lock no fim
@@ -453,7 +501,7 @@ class DataStore:
             with open(tmp, "wb") as fh:
                 pickle.dump({
                     "meta": self.meta, "google": self.google, "tiktok": self.tiktok,
-                    "geo": self.geo,
+                    "instagram": self.instagram, "geo": self.geo,
                     "updated_at": self.updated_at, "source_label": self.source_label,
                 }, fh, protocol=pickle.HIGHEST_PROTOCOL)
             os.replace(tmp, STORE_CACHE)
@@ -480,6 +528,9 @@ class DataStore:
                 # retrocompat: pickles antigos (pre-TikTok) nao tem a chave 'tiktok'
                 tk = data.get("tiktok")
                 self.tiktok = tk if tk is not None else pd.DataFrame(columns=TIKTOK_COLUMNS)
+                # retrocompat: pickles anteriores ao Instagram nao tem a chave
+                ig = data.get("instagram")
+                self.instagram = ig if ig is not None else pd.DataFrame(columns=INSTAGRAM_COLUMNS)
                 self.geo = data["geo"]
                 self.updated_at = ts
                 self.source_label = data.get("source_label") or "—"

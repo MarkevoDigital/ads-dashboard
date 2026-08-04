@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard de Ads — Meta + Google</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=21">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -98,6 +98,15 @@
       <div id="campaigns-wrap" class="table-wrap"></div>
     </section>
 
+    <!-- Seguidores do Instagram (aparece SÓ para clientes com conta de IG vinculada) -->
+    <section class="card hidden" id="instagram-section">
+      <h2>📸 Seguidores do Instagram</h2>
+      <p class="hint">Dados orgânicos da conta (todos os seguidores, não só os vindos de anúncios).</p>
+      <div id="ig-kpis" class="invest-grid"></div>
+      <div class="chart-wrap small ig-chart"><canvas id="chart-ig"></canvas></div>
+      <div id="ig-wrap" class="table-wrap"></div>
+    </section>
+
     <!-- Conjuntos de anúncios / Grupos de recursos -->
     <section class="card" id="adsets-table-section">
       <div class="card-head">
@@ -180,6 +189,6 @@
   <div id="loading" class="loading hidden">Carregando…</div>
   <footer class="foot">Atualização automática diária · Meta Ads + Google Ads</footer>
 
-  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20"></script>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=21"></script>
 </body>
 </html>

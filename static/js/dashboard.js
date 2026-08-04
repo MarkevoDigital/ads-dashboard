@@ -114,6 +114,7 @@
       $("ads-wrap").innerHTML = ""; $("adsets-wrap").innerHTML = "";
       $("geo-section").classList.add("hidden");
       $("tiktok-section").classList.add("hidden");
+      $("instagram-section").classList.add("hidden");
       return;
     }
 
@@ -142,6 +143,7 @@
     $("ads-table-section").classList.toggle("hidden", plat === "google");
     renderTikTok(data, plat);
     renderCampaigns(data.campanhas);
+    renderInstagram(data);
     renderKeywords(data.palavras_chave);
     renderPlatform(data.comparativo_plataforma);
     renderPeriod(data.comparativo_periodo);
@@ -539,6 +541,72 @@
     });
   }
 
+  // ---- Seguidores do Instagram (orgânico) ----
+  let igChart = null;
+  function renderInstagram(data) {
+    const sec = $("instagram-section");
+    const ig = data.instagram;
+    // Data-driven: some por completo se o cliente não tem conta de IG vinculada.
+    if (!data.tem_instagram || !ig || !ig.contas || !ig.contas.length) {
+      sec.classList.add("hidden");
+      if (igChart) { igChart.destroy(); igChart = null; }
+      return;
+    }
+    sec.classList.remove("hidden");
+
+    const cresc = (ig.crescimento || 0);
+    const sinal = cresc > 0 ? "▲" : cresc < 0 ? "▼" : "■";
+    $("ig-kpis").innerHTML = `
+      <div class="invest-card iv-ig">
+        <div class="iv-label">Seguidores (total)</div>
+        <div class="iv-value">${fmt(ig.total, "int")}</div>
+        <div class="iv-prev">Somando ${ig.contas.length} conta${ig.contas.length > 1 ? "s" : ""}</div>
+      </div>
+      <div class="invest-card iv-ig">
+        <div class="iv-label">Novos no período</div>
+        <div class="iv-value">${cresc >= 0 ? "+" : ""}${fmt(ig.novos, "int")}</div>
+        <div class="iv-prev">Seguidores ganhos no período filtrado</div>
+      </div>
+      <div class="invest-card iv-ig">
+        <div class="iv-label">Crescimento</div>
+        <div class="iv-value">${sinal} ${Math.abs(cresc).toFixed(2).replace(".", ",")}%</div>
+        <div class="iv-prev">Sobre a base no início do período</div>
+      </div>`;
+
+    // série diária de novos seguidores
+    const s = ig.serie || { labels: [], novos: [] };
+    if (igChart) igChart.destroy();
+    igChart = new Chart($("chart-ig"), {
+      data: {
+        labels: s.labels,
+        datasets: [{
+          type: "bar", label: "Novos seguidores/dia", data: s.novos,
+          backgroundColor: "rgba(225,48,108,.55)", borderColor: "#e1306c", borderWidth: 1,
+        }],
+      },
+      options: {
+        ...baseOpts({}),
+        plugins: { legend: { labels: { color: "#e6eaf2" } } },
+        scales: {
+          x: { ticks: { color: "#93a0b8", maxRotation: 0, autoSkip: true }, grid: { color: "#222a3a" } },
+          y: { ticks: { color: "#93a0b8" }, grid: { color: "#222a3a" } },
+        },
+      },
+    });
+
+    // tabela por conta (só faz sentido quando há mais de uma)
+    if (ig.contas.length > 1) {
+      const linhas = ig.contas.map((c) => `<tr>
+        <td>@${esc(c.username)}</td><td>${esc(c.conta)}</td>
+        <td>${fmt(c.total, "int")}</td><td>${c.novos >= 0 ? "+" : ""}${fmt(c.novos, "int")}</td>
+        <td>${(c.crescimento || 0).toFixed(2).replace(".", ",")}%</td></tr>`).join("");
+      $("ig-wrap").innerHTML = `<table><thead><tr><th>Conta</th><th>Página</th>
+        <th>Seguidores</th><th>Novos</th><th>Crescimento</th></tr></thead><tbody>${linhas}</tbody></table>`;
+    } else {
+      $("ig-wrap").innerHTML = "";
+    }
+  }
+
   // ---- Mapa geografico por ESTADOS (Meta + Google somados): bolhas proporcionais.
   // Tamanho E cor escalam com o volume de cliques (degradê: pouco = pequeno/claro;
   // muito = grande/verde forte). Determinístico e legível sem zoom.
@@ -645,6 +713,7 @@
   const resizeCharts = () => {
     try { if (trendChart) trendChart.resize(); } catch (e) {}
     try { if (platformChart) platformChart.resize(); } catch (e) {}
+    try { if (igChart) igChart.resize(); } catch (e) {}
     try { if (geoMap) geoMap.invalidateSize(); } catch (e) {}
   };
   window.addEventListener("beforeprint", resizeCharts);

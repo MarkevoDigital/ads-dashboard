@@ -450,6 +450,69 @@ def _ads(meta_cur, tiktok_cur=None) -> list[dict]:
 
 
 # ----------------------------------------------------------------------------
+# Instagram (organico): seguidores
+# ----------------------------------------------------------------------------
+def _ig_novos(ig_df, start, end) -> float:
+    """Novos seguidores no periodo (soma de todas as contas de IG do escopo)."""
+    if ig_df is None or ig_df.empty:
+        return 0.0
+    win = _window(ig_df, start, end)
+    if win is None or win.empty:
+        return 0.0
+    return float(win["new_followers"].sum())
+
+
+def _instagram(ig_df, scope, start, end) -> dict:
+    """Total de seguidores, novos no periodo e crescimento — por conta e consolidado.
+
+    'total' e um SNAPSHOT do momento da coleta (a API nao devolve historico do total),
+    entao nao depende da janela; 'novos' e a soma do periodo filtrado. O crescimento
+    compara os novos com a base estimada no inicio do periodo (total - novos)."""
+    vazio = {"contas": [], "total": 0, "novos": 0, "crescimento": 0.0, "serie": {"labels": [], "novos": []}}
+    if ig_df is None or ig_df.empty:
+        return vazio
+    df = ig_df
+    if scope is not None:
+        permitidos = scope.get("instagram_ids") or set()
+        df = df[df["ig_id"].astype(str).map(_digits).isin(permitidos)]
+    if df.empty:
+        return vazio
+    win = _window(df, start, end)
+    if win is None or win.empty:
+        return vazio
+
+    contas = []
+    for ig_id, g in win.groupby("ig_id", dropna=False):
+        novos = float(g["new_followers"].sum())
+        total = float(g["followers_total"].max())
+        base = total - novos
+        contas.append({
+            "ig_id": str(ig_id),
+            "username": str(g["username"].iloc[0]),
+            "conta": str(g["account"].iloc[0]),
+            "total": int(round(total)),
+            "novos": int(round(novos)),
+            "crescimento": round((novos / base * 100.0), 2) if base > 0 else 0.0,
+        })
+    contas.sort(key=lambda c: -c["total"])
+
+    total = sum(c["total"] for c in contas)
+    novos = sum(c["novos"] for c in contas)
+    base = total - novos
+    dia = win.groupby("date", dropna=False)["new_followers"].sum().reset_index().sort_values("date")
+    return {
+        "contas": contas,
+        "total": total,
+        "novos": novos,
+        "crescimento": round((novos / base * 100.0), 2) if base > 0 else 0.0,
+        "serie": {
+            "labels": [_fmt_date(d) for d in dia["date"]],
+            "novos": [int(round(v)) for v in dia["new_followers"]],
+        },
+    }
+
+
+# ----------------------------------------------------------------------------
 # Geo (mapa de calor)
 # ----------------------------------------------------------------------------
 def _geo(geo_df, scope, start, end, level="estado", platform=None) -> dict:
@@ -584,6 +647,8 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
     meta, google = store.meta.copy(), store.google.copy()
     tiktok = store.tiktok.copy() if getattr(store, "tiktok", None) is not None \
         else pd.DataFrame(columns=meta.columns)
+    instagram = getattr(store, "instagram", None)
+    instagram = instagram.copy() if instagram is not None else pd.DataFrame()
 
     # Cliente com leads_form_only (ex.: IPV7): "Leads" passa a contar SO os leads por
     # formulario (Instant Form) de campanhas com objetivo lead-gen, batendo com o
@@ -612,13 +677,18 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
     # tem_tiktok controla a visibilidade da secao/opcao TikTok no front (data-driven):
     # so quando o cliente em escopo tem dados TikTok.
     tem_tiktok = not tiktok.empty
+    # Instagram: mesma logica — a secao so aparece p/ clientes com conta de IG vinculada.
+    if scope is not None and instagram is not None and not instagram.empty:
+        instagram = instagram[instagram["ig_id"].astype(str).map(_digits)
+                              .isin(scope.get("instagram_ids") or set())]
+    tem_instagram = instagram is not None and not instagram.empty
 
     # historico completo (escopo+conta), p/ ocultar metricas sem historico
     meta_all, google_all, tiktok_all = meta.copy(), google.copy(), tiktok.copy()
 
     all_dates = list(meta["date"]) + list(google["date"]) + list(tiktok["date"])
     if not all_dates:
-        return {"vazio": True, "tem_tiktok": tem_tiktok,
+        return {"vazio": True, "tem_tiktok": tem_tiktok, "tem_instagram": tem_instagram,
                 "filtros": {"account": account, "platform": platform, "days": days}}
 
     # Janela: intervalo explicito (mes/personalizado) tem prioridade sobre "ultimos N dias".
@@ -666,9 +736,29 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
     history = M.sums(meta_all, google_all, tiktok_all)
     blocks = _objective_blocks(meta_cur, google_cur, meta_prev, google_prev, tiktok_cur, tiktok_prev)
 
+    # "Visitas ao Instagram": alem das metricas de Ads, mostra os SEGUIDORES ganhos.
+    # ATENCAO: a API de Ads da Meta NAO expoe "seguidores" por campanha (o numero que
+    # aparece no Gerenciador) — conferido campo a campo. Este valor vem da Instagram
+    # Graph API e e da CONTA inteira no periodo (anuncios + organico); por isso o
+    # rotulo deixa "(conta)" explicito, para nao ser lido como atribuicao da campanha.
+    if tem_instagram:
+        ig_cur = _ig_novos(instagram, start, end)
+        ig_prev = _ig_novos(instagram, prev_start, prev_end)
+        d_ig = M.pct_change(ig_cur, ig_prev)
+        for b in blocks:
+            if b.get("objective") == "visitas_instagram":
+                b["cards"].append({
+                    "key": "ig_new_followers", "label": "Novos seguidores (conta)",
+                    "fmt": "int", "dir": "up", "value": round(ig_cur, 1),
+                    "prev_value": round(ig_prev, 1), "delta_pct": d_ig,
+                    "good": M.is_good("up", d_ig), "is_primary": False,
+                })
+
     payload = {
         "vazio": False,
         "tem_tiktok": tem_tiktok,
+        "tem_instagram": tem_instagram,
+        "instagram": _instagram(instagram, scope, start, end),
         "filtros": {"account": account, "platform": platform, "days": days},
         "periodo": {
             "inicio": _fmt_date(start), "fim": _fmt_date(end),

@@ -150,6 +150,7 @@ def _build_users():
             "scope": {"meta_ids": c.get("_meta_ids", set()),
                       "google_ids": c.get("_google_ids", set()),
                       "tiktok_ids": c.get("_tiktok_ids", set()),
+                      "instagram_ids": c.get("_instagram_ids", set()),
                       "leads_form_only": bool(c.get("leads_form_only", False))},
             "nome": c.get("nome", c["key"]),
         }

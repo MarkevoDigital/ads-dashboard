@@ -688,7 +688,13 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
 
     all_dates = list(meta["date"]) + list(google["date"]) + list(tiktok["date"])
     if not all_dates:
+        # Sem dados de ANUNCIO no periodo. O Instagram e organico e independe de
+        # veiculacao, entao ainda assim entregamos a secao de seguidores (ha clientes
+        # com conta de IG e sem campanha ativa) — a janela usa o calendario padrao.
+        _end = pd.Timestamp(today_br()) - pd.Timedelta(days=1)
+        _start = _end - pd.Timedelta(days=days - 1)
         return {"vazio": True, "tem_tiktok": tem_tiktok, "tem_instagram": tem_instagram,
+                "instagram": _instagram(instagram, scope, _start, _end),
                 "filtros": {"account": account, "platform": platform, "days": days}}
 
     # Janela: intervalo explicito (mes/personalizado) tem prioridade sobre "ultimos N dias".

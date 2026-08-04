@@ -26,6 +26,10 @@ COLUMNS = ["date", "ig_id", "username", "account", "new_followers", "followers_t
 
 # A Meta so entrega o insight diario de seguidores para contas com >= 100 seguidores.
 MIN_FOLLOWERS_INSIGHT = 100
+# ...e so dos ULTIMOS ~30 DIAS. Pedir uma janela maior faz a chamada falhar inteira
+# (voltando "novos = 0" para todo mundo), entao limitamos aqui. O dashboard busca
+# 60 dias de Ads por padrao — a serie de seguidores fica com os 30 disponiveis.
+INSIGHT_MAX_DAYS = 30
 
 
 def accounts(meta_cfg: dict) -> list[dict]:
@@ -106,7 +110,8 @@ def fetch(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
         return pd.DataFrame(columns=COLUMNS)
     version = meta_cfg.get("api_version", "v21.0")
     until = today_br() - timedelta(days=1)
-    since = until - timedelta(days=max(int(days), 1) - 1)
+    janela = max(1, min(int(days), INSIGHT_MAX_DAYS))
+    since = until - timedelta(days=janela - 1)
 
     rows: list[dict] = []
     accs = accounts(meta_cfg)

@@ -114,7 +114,8 @@
       $("ads-wrap").innerHTML = ""; $("adsets-wrap").innerHTML = "";
       $("geo-section").classList.add("hidden");
       $("tiktok-section").classList.add("hidden");
-      $("instagram-section").classList.add("hidden");
+      // Instagram é orgânico: aparece mesmo sem veiculação de anúncios no período.
+      renderInstagram(data);
       return;
     }
 

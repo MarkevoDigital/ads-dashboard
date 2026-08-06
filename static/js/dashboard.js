@@ -115,6 +115,8 @@
       $("best-ads-section").classList.add("hidden");
       $("ads-table-section").classList.add("hidden");
       $("adsets-table-section").classList.add("hidden");
+      $("keywords-section").classList.add("hidden");
+      $("kw-platform-row").classList.add("one-col");
       $("geo-section").classList.add("hidden");
       $("tiktok-section").classList.add("hidden");
       // Instagram é orgânico: aparece mesmo sem veiculação de anúncios no período.
@@ -478,7 +480,12 @@
   // ---- Palavras-chave ----
   function renderKeywords(kws) {
     const wrap = $("keywords-wrap");
-    if (!kws || !kws.length) { wrap.innerHTML = `<div class="empty">Sem dados de Google Ads no filtro atual.</div>`; return; }
+    // Sem palavras-chave (ex.: cliente só de Meta): some o card inteiro e o "Meta x
+    // Google" ao lado passa a ocupar a linha toda, sem deixar vão no layout.
+    const tem = !!(kws && kws.length);
+    $("keywords-section").classList.toggle("hidden", !tem);
+    $("kw-platform-row").classList.toggle("one-col", !tem);
+    if (!tem) { wrap.innerHTML = ""; return; }
     const rows = kws.map((k) => `<tr>
       <td>${k.keyword}</td><td>${fmt(k.clicks, "int")}</td><td>${fmt(k.ctr, "pct")}</td>
       <td>${fmt(k.cpc, "currency")}</td><td>${fmt(k.conversions, "int")}</td>

@@ -77,6 +77,9 @@ main { padding: 20px 24px 40px; max-width: 1320px; margin: 0 auto; display: flex
 .card h2 { margin: 0 0 14px; font-size: 15px; }
 .hint { margin: -8px 0 12px; color: var(--muted); font-size: 12px; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+/* Quando um dos dois cards da linha some (ex.: Palavras-chave sem dados), o que
+   sobra ocupa a largura toda em vez de deixar um vao ao lado. */
+.two-col.one-col { grid-template-columns: 1fr; }
 @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
 
 /* Comentarios */

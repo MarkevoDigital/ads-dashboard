@@ -109,9 +109,12 @@
         $("comments").innerHTML = `<div class="comment info">Sem dados no período selecionado.</div>`;
       }
       $("objective-blocks").innerHTML = "";
-      $("best-ads").innerHTML = `<div class="empty">${data.carregando ? "Carregando…" : "Sem anúncios."}</div>`;
       $("keywords-wrap").innerHTML = ""; $("campaigns-wrap").innerHTML = "";
       $("ads-wrap").innerHTML = ""; $("adsets-wrap").innerHTML = "";
+      // Sem dados no período: as seções de anúncios/conjuntos também somem inteiras.
+      $("best-ads-section").classList.add("hidden");
+      $("ads-table-section").classList.add("hidden");
+      $("adsets-table-section").classList.add("hidden");
       $("geo-section").classList.add("hidden");
       $("tiktok-section").classList.add("hidden");
       // Instagram é orgânico: aparece mesmo sem veiculação de anúncios no período.
@@ -140,8 +143,15 @@
     const plat = (data.filtros || {}).platform;
     // Melhores anúncios (Meta) e Anúncios veiculados: ocultar em "Somente Google".
     // Em "Somente TikTok" os melhores do Meta somem; a tabela de anúncios mostra TikTok.
-    $("best-ads-section").classList.toggle("hidden", plat === "google" || plat === "tiktok");
-    $("ads-table-section").classList.toggle("hidden", plat === "google");
+    // Somem por completo quando NAO HA DADOS (cliente sem Meta/TikTok, por exemplo),
+    // em vez de aparecerem zeradas — mesma regra data-driven das seções TikTok/Instagram.
+    // Obs.: a tabela de anúncios usa os dados SEM filtro; se o usuário filtrar por
+    // campanha e não sobrar linha, a seção continua visível (senão ele não conseguiria
+    // desfazer o filtro).
+    $("best-ads-section").classList.toggle("hidden",
+      plat === "google" || plat === "tiktok" || !(data.melhores_anuncios || []).length);
+    $("ads-table-section").classList.toggle("hidden",
+      plat === "google" || !(data.anuncios || []).length);
     renderTikTok(data, plat);
     renderCampaigns(data.campanhas);
     renderInstagram(data);
@@ -378,6 +388,9 @@
   let _adsetData = [];
   function renderAdSets(rows) {
     _adsetData = rows || [];
+    // Sem nenhum conjunto/grupo no período: some a seção inteira (data-driven).
+    $("adsets-table-section").classList.toggle("hidden", !_adsetData.length);
+    if (!_adsetData.length) return;
     const camps = [...new Set(_adsetData.map((r) => r.campanha))].sort((a, b) => a.localeCompare(b, "pt"));
     fillSelectPreserve($("f-adset-camp"), camps);
     drawAdSets();

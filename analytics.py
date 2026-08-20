@@ -357,6 +357,13 @@ def _campaigns(meta_cur, google_cur, tiktok_cur=None) -> list[dict]:
             cfg = M.objective_config(obj)
             spend = float(g["spend"].sum()) if is_meta else float(g["cost"].sum())
             impr = float(g["impressions"].sum())
+            # Sem veiculacao na janela escolhida -> fora da tabela. Campanha pausada
+            # continua aparecendo desde que tenha tido impressao no periodo; o que sai
+            # sao as linhas zeradas, que so poluem a leitura. Mesma regra que a tabela de
+            # anuncios ja aplica. O custo entra na condicao para nunca esconder dinheiro
+            # gasto (e manter a soma da tabela igual ao KPI de investimento).
+            if impr <= 0 and spend <= 0:
+                continue
             clk = float(g["clicks"].sum())
             gl = g[g["date"] == last] if last is not None else g.iloc[0:0]
             ativo = bool(len(gl) and (float(gl[spend_col].sum()) > 0
@@ -411,6 +418,9 @@ def _ad_sets(meta_cur, google_cur, tiktok_cur=None) -> list[dict]:
             cfg = M.objective_config(obj)
             spend = float(g[spend_col].sum())
             impr = float(g["impressions"].sum())
+            # Mesma regra das campanhas: conjunto/grupo sem entrega no periodo nao entra.
+            if impr <= 0 and spend <= 0:
+                continue
             clk = float(g["clicks"].sum())
             gl = g[g["date"] == last] if last is not None else g.iloc[0:0]
             ativo = bool(len(gl) and (float(gl[spend_col].sum()) > 0

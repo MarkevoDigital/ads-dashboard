@@ -92,6 +92,8 @@ EN = {
     "Visitas ao Instagram": "Instagram visits",
     "Alcance / Reconhecimento": "Reach / Awareness",
     "Outros": "Other",
+    "Engajamento": "Engagement",
+    "Custo por engajamento": "Cost per engagement",
     "Views": "Views",
     # --- Funil (analytics) ---
     "Novos seguidores (conta)": "New followers (account)",

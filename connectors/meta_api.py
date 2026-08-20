@@ -91,10 +91,68 @@ DEFAULT_OBJECTIVE_MAP = {
     "OUTCOME_AWARENESS": "alcance",
     "BRAND_AWARENESS": "alcance",
     "REACH": "alcance",
-    "OUTCOME_ENGAGEMENT": "mensagens",
-    "POST_ENGAGEMENT": "visitas_instagram",
+    # OUTCOME_ENGAGEMENT e GUARDA-CHUVA: cobre video/ThruPlay, engajamento de post,
+    # curtidas, mensagens e visitas ao perfil. Nao da para decidir so por ele — quem
+    # decide e o optimization_goal do conjunto (ver GOAL_MAP). Fica em "outros" como
+    # ultimo recurso, nunca mais como "mensagens".
+    "OUTCOME_ENGAGEMENT": "outros",
+    "POST_ENGAGEMENT": "engajamento",
     "PROFILE_VISITS": "visitas_instagram",
+    "VIDEO_VIEWS": "video",
+    "OUTCOME_VIDEO_VIEWS": "video",
 }
+
+# Objetivos que NAO definem sozinhos o desfecho: precisam do optimization_goal.
+OBJETIVOS_AMBIGUOS = {"OUTCOME_ENGAGEMENT", "ENGAGEMENT", "", None}
+
+# optimization_goal do CONJUNTO -> bucket. Este e o sinal autoritativo: e o que a
+# Meta esta de fato otimizando e o que ela conta como "resultado" no gerenciador.
+GOAL_MAP = {
+    "THRUPLAY": "video",
+    "VIDEO_VIEWS": "video",
+    "TWO_SECOND_CONTINUOUS_VIDEO_VIEWS": "video",
+    "CONVERSATIONS": "mensagens",
+    "REPLIES": "mensagens",
+    "LEAD_GENERATION": "leads",
+    "QUALITY_LEAD": "leads",
+    "OFFSITE_CONVERSIONS": "vendas",
+    "VALUE": "vendas",
+    "LANDING_PAGE_VIEWS": "trafego",
+    "LINK_CLICKS": "trafego",
+    "PROFILE_VISIT": "visitas_instagram",
+    "PROFILE_AND_PAGE_ENGAGEMENT": "visitas_instagram",
+    "POST_ENGAGEMENT": "engajamento",
+    "PAGE_LIKES": "engajamento",
+    "EVENT_RESPONSES": "engajamento",
+    "REACH": "alcance",
+    "IMPRESSIONS": "alcance",
+    "AD_RECALL_LIFT": "alcance",
+}
+
+# destination_type -> bucket (desempata quando o goal nao resolve).
+DEST_MAP = {
+    "MESSENGER": "mensagens",
+    "WHATSAPP": "mensagens",
+    "INSTAGRAM_DIRECT": "mensagens",
+    "INSTAGRAM_PROFILE": "visitas_instagram",
+    # Estes so pesam quando o conjunto nao informa optimization_goal (raro): o goal
+    # sempre tem prioridade. Ex.: ha [TRAF][SITE] com dest=ON_VIDEO e goal=LINK_CLICKS,
+    # que continua sendo trafego porque o goal decide primeiro.
+    "ON_VIDEO": "video",
+    "ON_POST": "engajamento",
+    "ON_AD": "engajamento",
+}
+
+# Ultimo recurso antes de olhar os resultados: convencao de nome da campanha. So
+# entra para objetivo ambiguo — o cliente escreve "[VIDEOVIEW]" e a leitura fica certa.
+NOME_MAP = [
+    (("videoview", "video view", "thruplay", "[video", "video]"), "video"),
+    (("mensagem", "whatsapp", "direct", "conversa"), "mensagens"),
+    (("perfil", "profile", "seguidor"), "visitas_instagram"),
+    (("engajamento", "engagement", "curtida"), "engajamento"),
+    (("trafego", "tráfego", "traffic", "clique"), "trafego"),
+    (("alcance", "awareness", "reconhecimento"), "alcance"),
+]
 
 # action_type candidatos por metrica (ordem = prioridade)
 ACTION_KEYS = {
@@ -350,13 +408,69 @@ def _campaign_budgets(account_id, token, version) -> dict:
     return out
 
 
-def _resolve_objective(meta_obj, msg, visits, obj_map) -> str:
+def _adset_goals(account_id, token, version) -> dict:
+    """adset_id -> (optimization_goal, destination_type). Best-effort.
+
+    E daqui que sai a correspondencia correta do objetivo: o objetivo da CAMPANHA
+    (OUTCOME_ENGAGEMENT, por exemplo) nao diz o que esta sendo otimizado; o
+    optimization_goal do conjunto diz.
+    """
+    out = {}
+    try:
+        url = f"{GRAPH}/{version}/{account_id}/adsets"
+        for a in _paged_get(url, {"fields": "id,optimization_goal,destination_type",
+                                  "limit": 500, "access_token": token}):
+            if a.get("id"):
+                out[str(a["id"])] = (a.get("optimization_goal") or "",
+                                     a.get("destination_type") or "")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[meta] optimization_goal indisponivel: {_safe(exc)}")
+    return out
+
+
+def _por_nome(nome: str) -> str:
+    n = (nome or "").lower()
+    for chaves, bucket in NOME_MAP:
+        if any(k in n for k in chaves):
+            return bucket
+    return ""
+
+
+def _resolve_objective(meta_obj, msg, visits, obj_map, goal="", dest="",
+                       campaign_name="", video_views=0.0, engagement=0.0) -> str:
+    """Bucket do anuncio, do sinal mais forte para o mais fraco.
+
+    1) optimization_goal do conjunto — o que a Meta otimiza e conta como resultado;
+    2) destination_type — desempata mensagem/perfil;
+    3) mapa do objetivo da campanha — se o objetivo NAO for guarda-chuva;
+    4) convencao de nome da campanha (ex.: "[VIDEOVIEW]");
+    5) resultados observados no periodo — ultimo recurso.
+    """
+    por_goal = GOAL_MAP.get((goal or "").upper())
+    if por_goal:
+        return por_goal
+    por_dest = DEST_MAP.get((dest or "").upper())
+    if por_dest:
+        return por_dest
+
+    ambiguo = (meta_obj or "").upper() in OBJETIVOS_AMBIGUOS
     bucket = obj_map.get(meta_obj, "outros")
-    if bucket in ("outros", "mensagens", "visitas_instagram"):
-        if msg > 0:
-            return "mensagens"
-        if visits > 0:
-            return "visitas_instagram"
+    if not ambiguo and bucket != "outros":
+        return bucket
+
+    por_nome = _por_nome(campaign_name)
+    if por_nome:
+        return por_nome
+
+    # Sem sinal explicito: usa o que a campanha de fato produziu.
+    if msg > 0:
+        return "mensagens"
+    if video_views > 0 and video_views >= max(engagement, 1):
+        return "video"
+    if visits > 0:
+        return "visitas_instagram"
+    if engagement > 0:
+        return "engajamento"
     return bucket
 
 
@@ -383,11 +497,13 @@ def fetch(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
 def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> list[dict]:
     thumbs = _thumbnails(account_id, token, version)
     budgets = _campaign_budgets(account_id, token, version)
+    goals = _adset_goals(account_id, token, version)
     url = f"{GRAPH}/{version}/{account_id}/insights"
     params = {
         "level": "ad", "time_increment": 1,
         "fields": ",".join([
-            "ad_id", "ad_name", "adset_name", "campaign_id", "campaign_name", "objective",
+            "ad_id", "ad_name", "adset_id", "adset_name", "campaign_id", "campaign_name",
+            "objective",
             "account_name", "impressions", "reach", "frequency", "clicks",
             "inline_link_clicks", "spend", "actions", "action_values",
         ]),
@@ -407,7 +523,11 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
         site_visits = _first_action(actions, ACTION_KEYS["site_visits"])
         video_views = _first_action(actions, ACTION_KEYS["video_views"])
         engagement = _first_action(actions, ACTION_KEYS["engagement"])
-        objective = _resolve_objective(r.get("objective", ""), msg, visits, obj_map)
+        goal, dest = goals.get(str(r.get("adset_id") or ""), ("", ""))
+        objective = _resolve_objective(r.get("objective", ""), msg, visits, obj_map,
+                                       goal=goal, dest=dest,
+                                       campaign_name=r.get("campaign_name", ""),
+                                       video_views=video_views, engagement=engagement)
         # Leads SO por formulario (Instant Form = onsite_conversion.lead_grouped) e SO de
         # campanhas com objetivo de geracao de leads. Coluna paralela usada por clientes
         # com a flag leads_form_only no clients.json (ex.: IPV7), para baterem com o

@@ -56,6 +56,7 @@ KPI_CATALOG = {
     "site_visits":    {"label": "Visitas ao site",       "fmt": "int",      "dir": "up",      "base": "site_visits",  "calc": lambda s: s["site_visits"]},
     "cost_per_site":  {"label": "Custo/visita site",     "fmt": "currency", "dir": "down",    "base": "site_visits",  "calc": lambda s: _safe(s["spend"], s["site_visits"])},
     "video_views":    {"label": "Visualizações de vídeo","fmt": "int",      "dir": "up",      "base": "video_views",  "calc": lambda s: s["video_views"]},
+    "cost_per_engagement": {"label": "Custo por engajamento", "fmt": "currency", "dir": "down", "base": "engagement",   "calc": lambda s: _safe(s["spend"], s["engagement"])},
     "cpv":            {"label": "Custo por view",        "fmt": "currency", "dir": "down",    "base": "video_views",  "calc": lambda s: _safe(s["spend"], s["video_views"])},
     "view_rate":      {"label": "Taxa de visualização",  "fmt": "pct",      "dir": "up",      "base": "video_views",  "calc": lambda s: _safe(s["video_views"], s["impressions"])},
     "engagement":     {"label": "Engajamentos",          "fmt": "int",      "dir": "up",      "base": "engagement",   "calc": lambda s: s["engagement"]},
@@ -100,6 +101,13 @@ OBJECTIVE_CONFIG = {
         "kpis": ["spend", "link_clicks", "site_visits", "cost_per_site", "cpc", "ctr",
                  "clicks", "impressions", "cpm"],
         "primary": "cpc", "best_ad_metric": "cpc", "conv_key": "link_clicks",
+    },
+    "engajamento": {
+        "label": "Engajamento", "icone": "thumbs-up", "conv_label": "Engajamentos",
+        "kpis": ["spend", "engagement", "eng_rate", "cost_per_engagement",
+                 "clicks", "ctr", "impressions", "cpm", "reach"],
+        "primary": "cost_per_engagement", "best_ad_metric": "cost_per_engagement",
+        "conv_key": "engagement",
     },
     "video": {
         "label": "Visualizações de vídeo", "icone": "play-circle", "conv_label": "Views",

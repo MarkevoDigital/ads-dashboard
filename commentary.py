@@ -229,6 +229,14 @@ def generate(payload: dict, idioma: str = "pt") -> dict:
     fun = payload.get("funil") or {}
     stages = fun.get("stages", [])
 
+    # Conversas so viram destaque quando alguma campanha do periodo tem mensagens
+    # como objetivo. Sem isso, uma conversa acidental de campanha de video vira linha
+    # de relatorio com "custo por conversa" = investimento inteiro da conta. Sem
+    # blocos (payload vazio) mantemos o comportamento antigo, para nao esconder dado.
+    blocos_obj = payload.get("blocos_objetivo") or []
+    msg_e_objetivo = (not blocos_obj
+                      or any(b.get("objective") == "mensagens" for b in blocos_obj))
+
     def _rate(*prefixos):
         return next((r for r in fun.get("rates", [])
                      if any(r.get("label", "").startswith(px) for px in prefixos)), None)
@@ -271,6 +279,8 @@ def generate(payload: dict, idioma: str = "pt") -> dict:
             chave = {"Conversions": "Conversões", "Conversations": "Conversas",
                      "Purchases": "Compras", "Add to cart": "Adições ao carrinho",
                      "Checkouts initiated": "Checkouts iniciados"}.get(lbl, lbl)
+            if chave == "Conversas" and not msg_e_objetivo:
+                continue
             par = T["desfecho"][chave]
             noun = par[0] if val == 1 else par[1]
             txt = T["desfecho_txt"].format(v=f(val, "int"), noun=noun)

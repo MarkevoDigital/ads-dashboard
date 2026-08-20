@@ -101,6 +101,14 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0) -> dict:
     """
     s = M.sums(meta_cur, google_cur, tiktok_cur)
     clicks = s["clicks"]
+    # Alguma campanha do periodo tem mensagens como objetivo? O custo por conversa
+    # divide o investimento do periodo INTEIRO pelas conversas; sem campanha de
+    # mensagem, uma conversa acidental de campanha de video vira "custo/conversa" =
+    # conta toda. Nesse caso mostramos a contagem (resultado real) e omitimos o custo.
+    msg_e_objetivo = any(
+        "mensagens" in set(df["objective"].dropna().unique())
+        for df in (meta_cur, google_cur, tiktok_cur)
+        if df is not None and not df.empty and "objective" in df.columns)
     impr = round(s["impressions"])
     seq = []  # (key, label, value)
     for key in _funnel_order():
@@ -112,6 +120,8 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0) -> dict:
     for (k, lb, v) in seq:
         st = {"label": lb, "value": v, "fmt": "int"}
         cost = _FUNNEL_COST.get(k)
+        if k == "messaging" and not msg_e_objetivo:
+            cost = None
         if cost:
             st["cost_label"] = cost[0]
             st["cost"] = round(cost[1](s), 2)

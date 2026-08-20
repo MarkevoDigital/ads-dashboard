@@ -49,7 +49,11 @@ CHANNEL_OBJECTIVE = {
     "PERFORMANCE_MAX": "vendas",
     "SHOPPING": "vendas",
     "DISPLAY": "trafego",
-    "VIDEO": "alcance",
+    # Campanha de video (YouTube) pertence ao bucket "video": o destaque passa a ser
+    # custo por view e taxa de visualizacao. Em "alcance" o KPI principal virava CPM e
+    # o alcance nem existe no lado Google (so Meta/TikTok), entao o bloco ficava mudo
+    # justamente sobre o que a campanha faz.
+    "VIDEO": "video",
     "DEMAND_GEN": "trafego",
 }
 

@@ -8,19 +8,181 @@
   const MESES =["janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
-  const nf = new Intl.NumberFormat("pt-BR");
-  const cf = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+  // ---- Idioma e moeda (vem do payload; o login define os dois) -----------
+  // O dashboard nasceu em pt-BR e continua assim por padrao. Clientes com
+  // "idioma": "en" recebem a interface em ingles; a moeda vem da conta de
+  // anuncios (nao e chutada), entao ha cliente em US$ e cliente em R$.
+  let LANG = "pt";
+  let MOEDA = { codigo: "BRL", simbolo: "R$", locale: "pt-BR" };
+  let nf = new Intl.NumberFormat("pt-BR");
+  let cf = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+  let domTraduzido = false;
+
+  const I18N_EN = {
+    "Dashboard de Ads": "Ads Dashboard",
+    "Ver como": "View as",
+    "Conta": "Account",
+    "Todas as contas": "All accounts",
+    "Plataforma": "Platform",
+    "Meta + Google": "Meta + Google",
+    "Somente Meta": "Meta only",
+    "Somente Google": "Google only",
+    "Somente TikTok": "TikTok only",
+    "Período": "Date range",
+    "Últimos 7 dias": "Last 7 days",
+    "Últimos 14 dias": "Last 14 days",
+    "Últimos 30 dias": "Last 30 days",
+    "Últimos 60 dias": "Last 60 days",
+    "Por mês": "By month",
+    "Personalizado…": "Custom…",
+    "Datas": "Dates",
+    "⟳ Atualizar": "⟳ Refresh",
+    "⬇ Exportar em PDF": "⬇ Export to PDF",
+    "SAIR": "⎋ Sign out",
+    "Recarregar dados da fonte": "Reload data from the source",
+    "Exportar a visualização atual em PDF": "Export the current view to PDF",
+    "Sair e entrar com outro acesso": "Sign out and use another login",
+    "Agência (todos os clientes)": "Agency (all clients)",
+    "Relatório de Tráfego Pago": "Paid Media Report",
+    "🔻 Funil de resultados": "🔻 Results funnel",
+    "🧠 Análise de dados": "🧠 Data analysis",
+    "💰 Investimento": "💰 Spend",
+    "📈 Evolução diária": "📈 Daily trend",
+    "🗂️ Campanhas por plataforma": "🗂️ Campaigns by platform",
+    "Campanhas com veiculação no período filtrado.": "Campaigns that delivered in the selected period.",
+    "📸 Seguidores do Instagram": "📸 Instagram followers",
+    "Dados orgânicos da conta (todos os seguidores, não só os vindos de anúncios).": "Organic account data (all followers, not only those coming from ads).",
+    "🎯 Conjuntos de anúncios / Grupos de recursos": "🎯 Ad sets / Asset groups",
+    "Conjuntos de anúncios (Meta) e grupos de anúncios/recursos (Google) com veiculação no período.": "Meta ad sets and Google ad/asset groups that delivered in the period.",
+    "Campanha": "Campaign",
+    "Todas as campanhas": "All campaigns",
+    "Conjunto": "Ad set",
+    "Todos os conjuntos": "All ad sets",
+    "🏆 Melhores anúncios do Meta Ads": "🏆 Top Meta Ads creatives",
+    "Criativo destaque por objetivo (com print do anúncio).": "Top creative per objective (with a preview).",
+    "🖼️ Anúncios veiculados": "🖼️ Ads delivered",
+    "Anúncios do Meta com entrega no período, agrupados por nome, campanha e conjunto.": "Meta ads that delivered in the period, grouped by name, campaign and ad set.",
+    "🎵 TikTok Ads": "🎵 TikTok Ads",
+    "Desempenho do TikTok no período (também já somado aos totais e gráficos acima).": "TikTok performance in the period (already included in the totals and charts above).",
+    "🏆 Melhores anúncios do TikTok": "🏆 Top TikTok ads",
+    "🔑 Palavras-chave (Google Ads)": "🔑 Keywords (Google Ads)",
+    "⚖️ Meta x Google": "⚖️ Meta vs. Google",
+    "🔁 Período atual vs. anterior": "🔁 Current vs. previous period",
+    "📍 Mapa de calor — cliques por estado": "📍 Heat map — clicks by state",
+    "Carregando…": "Loading…",
+    "Atualização automática diária · Meta Ads + Google Ads": "Updated automatically every day · Meta Ads + Google Ads",
+    "Sem dados no período selecionado.": "No data for the selected period.",
+    "Erro ao carregar dados.": "Failed to load data.",
+    "⏳ Carregando os dados pela primeira vez (pode levar 1–2 min). Atualize a página em instantes.": "⏳ Loading data for the first time (it may take 1–2 min). Refresh the page shortly.",
+    "Sem anúncios TikTok com investimento relevante no período.": "No TikTok ads with relevant spend in the period.",
+    "Sem anúncios com investimento relevante.": "No ads with relevant spend.",
+    "Sem campanhas no período.": "No campaigns in the period.",
+    "Sem conjuntos/grupos no período": "No ad sets/groups in the period",
+    " para esta campanha": " for this campaign",
+    "Sem anúncios veiculados no período": "No ads delivered in the period",
+    " para este filtro": " for this filter",
+    "Objetivo": "Objective",
+    "Orç./dia": "Budget/day",
+    "Orçamento diário": "Daily budget",
+    "Invest.": "Spend",
+    "Impr.": "Impr.",
+    "Cliques": "Clicks",
+    "Conv.": "Conv.",
+    "Conjunto / Grupo": "Ad set / Group",
+    "Anúncio": "Ad",
+    "Palavra-chave": "Keyword",
+    "Métrica": "Metric",
+    "Atual": "Current",
+    "Anterior": "Previous",
+    "Variação": "Change",
+    "Página": "Page",
+    "Seguidores": "Followers",
+    "Novos": "New",
+    "Crescimento": "Growth",
+    "Cidade": "City",
+    "Views vídeo": "Video views",
+    "Visitas IG": "IG visits",
+    "Engaj.": "Engagement",
+    "Verde = em veiculação · Vermelho = inativa": "Green = delivering · Red = inactive",
+    "Verde = em veiculação · Vermelho = inativo": "Green = delivering · Red = inactive",
+    "Em veiculação": "Delivering",
+    "Não ativa no momento": "Not active right now",
+    "Não ativo no momento": "Not active right now",
+    "Abrir anúncio": "Open ad",
+    "Ver anúncio ↗": "View ad ↗",
+    "Investimento": "Spend",
+    "Conversões": "Conversions",
+    "Cliques / Conversões": "Clicks / Conversions",
+    "Novos seguidores/dia": "New followers/day",
+    "Vendo como: ": "Viewing as: ",
+    "Fonte: ": "Source: ",
+    " · atualizado ": " · updated ",
+    "Anterior: ": "Previous: ",
+    "— vs. período anterior": "— vs. previous period",
+    "vs. anterior": "vs. previous",
+  };
+
+  const MESES_EN = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+
+  function T(txt) {
+    if (LANG !== "en") return txt;
+    return Object.prototype.hasOwnProperty.call(I18N_EN, txt) ? I18N_EN[txt] : txt;
+  }
+
+  function setLocale(idioma, moeda) {
+    if (moeda && moeda.codigo) MOEDA = moeda;
+    LANG = idioma === "en" ? "en" : "pt";
+    const loc = LANG === "en" ? "en-US" : "pt-BR";
+    nf = new Intl.NumberFormat(loc);
+    try {
+      cf = new Intl.NumberFormat(loc, { style: "currency", currency: MOEDA.codigo || "BRL" });
+    } catch (e) {
+      cf = new Intl.NumberFormat(loc, { style: "currency", currency: "BRL" });
+    }
+    if (LANG === "en" && !domTraduzido) { traduzirDOM(); domTraduzido = true; }
+  }
+
+  // Traduz o texto ESTATICO da pagina (marcado com data-i18n no HTML). Roda uma
+  // unica vez, quando o payload informa que este login e em ingles.
+  function traduzirDOM() {
+    document.querySelectorAll("[data-i18n]").forEach((el) => {
+      const v = I18N_EN[el.getAttribute("data-i18n")];
+      if (v) el.textContent = v;
+    });
+    document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+      const v = I18N_EN[el.getAttribute("data-i18n-title")];
+      if (v) el.setAttribute("title", v);
+    });
+    document.querySelectorAll("select[data-all]").forEach((el) => {
+      const v = I18N_EN[el.getAttribute("data-all")];
+      if (v) { el.setAttribute("data-all", v); if (el.options[0]) el.options[0].textContent = v; }
+    });
+    document.title = "Ads Dashboard";
+  }
+
+  // Separador decimal do idioma (pt-BR usa virgula; ingles usa ponto).
+  function dec(v, casas) {
+    const t = v.toFixed(casas);
+    return LANG === "en" ? t : t.replace(".", ",");
+  }
 
   function fmt(value, kind) {
     if (value === null || value === undefined) return "—";
     switch (kind) {
       case "currency": return cf.format(value);
       case "int": return nf.format(Math.round(value));
-      case "pct": return (value * 100).toFixed(2).replace(".", ",") + "%";
-      case "ratio": return value.toFixed(2).replace(".", ",") + "x";
-      case "dec": return value.toFixed(2).replace(".", ",");
+      case "pct": return dec(value * 100, 2) + "%";
+      case "ratio": return dec(value, 2) + "x";
+      case "dec": return dec(value, 2);
       default: return String(value);
     }
+  }
+
+  // Percentual de variacao com o separador decimal do idioma (3,0% x 3.0%).
+  function pctVar(v) {
+    const t = Math.abs(v).toFixed(1);
+    return (LANG === "en" ? t : t.replace(".", ",")) + "%";
   }
 
   function deltaHtml(delta, good) {
@@ -28,7 +190,7 @@
       return `<span class="k-delta neutral">—</span>`;
     const cls = good === true ? "good" : good === false ? "bad" : "neutral";
     const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : "■";
-    return `<span class="k-delta ${cls}">${arrow} ${Math.abs(delta).toFixed(1).replace(".", ",")}%</span>`;
+    return `<span class="k-delta ${cls}">${arrow} ${pctVar(delta)}</span>`;
   }
 
   async function load() {
@@ -56,16 +218,22 @@
       render(await res.json());
     } catch (e) {
       console.error(e);
-      $("comments").innerHTML = `<div class="comment alerta">Erro ao carregar dados.</div>`;
+      $("comments").innerHTML = `<div class="comment alerta">${T("Erro ao carregar dados.")}</div>`;
     } finally {
       $("loading").classList.add("hidden");
     }
   }
 
   function render(data) {
+    // Idioma e moeda deste login, antes de qualquer formatacao.
+    setLocale(data.idioma, data.moeda);
     // Seletor "Ver como" (somente admin/agência): popula uma vez e revela.
     if (data.clientes_admin && !clientLoaded) {
       const cs = $("f-client");
+      // Agencia de grupo: a opcao "todos" e o grupo, nao a agencia inteira.
+      if (data.agencia_grupo && cs.options.length) {
+        cs.options[0].textContent = ((data.meta_info || {}).cliente || "Grupo") + " (todos do grupo)";
+      }
       data.clientes_admin.forEach((c) => {
         const o = document.createElement("option"); o.value = c.key; o.textContent = c.nome; cs.appendChild(o);
       });
@@ -77,7 +245,7 @@
       const sig = data.contas.join("|");
       if (sig !== accountsSig) {
         const sel = $("f-account");
-        sel.innerHTML = `<option value="todas">Todas as contas</option>`;
+        sel.innerHTML = `<option value="todas">${T("Todas as contas")}</option>`;
         data.contas.forEach((c) => {
           const o = document.createElement("option"); o.value = c; o.textContent = c; sel.appendChild(o);
         });
@@ -89,24 +257,25 @@
     if (data.cliente_sel && $("f-client")) {
       const opt = $("f-client").options[$("f-client").selectedIndex];
       reportClient = opt ? opt.textContent : data.cliente_sel;
-      $("cliente-sub").textContent = "Vendo como: " + reportClient;
+      $("cliente-sub").textContent = T("Vendo como: ") + reportClient;
     } else if (mi.cliente) {
       reportClient = mi.cliente;
       $("cliente-sub").textContent = mi.cliente;
     }
     if ($("report-client")) $("report-client").textContent = reportClient;
-    $("src-info").textContent = "Fonte: " + (mi.fonte || "—") +
-      (mi.atualizado_em ? " · atualizado " + new Date(mi.atualizado_em)
-        .toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "");
+    $("src-info").textContent = T("Fonte: ") + (mi.fonte || "—") +
+      (mi.atualizado_em ? T(" · atualizado ") + new Date(mi.atualizado_em)
+        .toLocaleString(LANG === "en" ? "en-US" : "pt-BR",
+                        { timeZone: "America/Sao_Paulo" }) : "");
 
     if (data.vazio) {
       $("period-info").textContent = "";
       $("funnel").innerHTML = "";
       if (data.carregando) {
-        $("comments").innerHTML = `<div class="comment info">⏳ Carregando os dados pela primeira vez (pode levar 1–2 min). Atualize a página em instantes.</div>`;
+        $("comments").innerHTML = `<div class="comment info">${T("⏳ Carregando os dados pela primeira vez (pode levar 1–2 min). Atualize a página em instantes.")}</div>`;
         setTimeout(load, 15000);  // re-tenta sozinho enquanto carrega
       } else {
-        $("comments").innerHTML = `<div class="comment info">Sem dados no período selecionado.</div>`;
+        $("comments").innerHTML = `<div class="comment info">${T("Sem dados no período selecionado.")}</div>`;
       }
       $("objective-blocks").innerHTML = "";
       $("keywords-wrap").innerHTML = ""; $("campaigns-wrap").innerHTML = "";
@@ -126,8 +295,11 @@
 
     const p = data.periodo;
     $("period-info").textContent =
-      `Período: ${p.inicio} a ${p.fim} (anterior: ${p.anterior_inicio} a ${p.anterior_fim})`;
-    if ($("report-period")) $("report-period").textContent = `Período: ${p.inicio} a ${p.fim}`;
+      LANG === "en"
+        ? `Period: ${p.inicio} to ${p.fim} (previous: ${p.anterior_inicio} to ${p.anterior_fim})`
+        : `Período: ${p.inicio} a ${p.fim} (anterior: ${p.anterior_inicio} a ${p.anterior_fim})`;
+    if ($("report-period")) $("report-period").textContent =
+      LANG === "en" ? `Period: ${p.inicio} to ${p.fim}` : `Período: ${p.inicio} a ${p.fim}`;
 
     populateMonths(p.fim);
 
@@ -175,7 +347,8 @@
     for (let i = 0; i < 6; i++) {
       const o = document.createElement("option");
       o.value = `m:${yy}-${String(mm).padStart(2, "0")}`;
-      o.textContent = `${MESES[mm - 1]} de ${yy}`;
+      o.textContent = LANG === "en" ? `${MESES_EN[mm - 1]} ${yy}`
+                                    : `${MESES[mm - 1]} de ${yy}`;
       og.appendChild(o);
       mm--; if (mm < 1) { mm = 12; yy--; }
     }
@@ -192,7 +365,10 @@
       const w = Math.max((s.value / maxV) * 100, 26);
       const cost = s.cost_label
         ? `<span class="fn-cost">${s.cost_label}: ${fmt(s.cost, "currency")}</span>` : "";
-      html += `<div class="fn-stage" style="width:${w}%">
+      // Etapa orgânica (seguidores do IG): estilo próprio, para não ser lida como
+      // conversão das campanhas — o número é da conta inteira.
+      const cls = s.organico ? "fn-stage organico" : "fn-stage";
+      html += `<div class="${cls}" style="width:${w}%">
         <span class="fn-label">${s.label}</span>
         <span class="fn-value">${fmt(s.value, s.fmt)}</span>
         ${cost}</div>`;
@@ -209,13 +385,13 @@
     if (!inv) { wrap.innerHTML = ""; return; }
     const card = (label, cls, d) => {
       const dt = (d.delta_pct === null || d.delta_pct === undefined)
-        ? `<span class="iv-delta">— vs. período anterior</span>`
-        : `<span class="iv-delta">${d.delta_pct > 0 ? "▲" : d.delta_pct < 0 ? "▼" : "■"} ${Math.abs(d.delta_pct).toFixed(1).replace(".", ",")}% vs. anterior</span>`;
+        ? `<span class="iv-delta">${T("— vs. período anterior")}</span>`
+        : `<span class="iv-delta">${d.delta_pct > 0 ? "▲" : d.delta_pct < 0 ? "▼" : "■"} ${pctVar(d.delta_pct)} ${T("vs. anterior")}</span>`;
       return `<div class="invest-card ${cls}">
         <div class="iv-label">${label}</div>
         <div class="iv-value">${fmt(d.atual, "currency")}</div>
         ${dt}
-        <div class="iv-prev">Anterior: ${fmt(d.anterior, "currency")}</div>
+        <div class="iv-prev">${T("Anterior: ")}${fmt(d.anterior, "currency")}</div>
       </div>`;
     };
     wrap.innerHTML = card("Meta Ads", "iv-meta", inv.meta)
@@ -267,8 +443,8 @@
         const img = a.thumbnail
           ? `<img class="thumb" src="${a.thumbnail}" alt="Print do anuncio" loading="lazy" onerror="this.style.display='none'">`
           : "";
-        const thumb = link && img ? `<a href="${link}" target="_blank" rel="noopener" title="Abrir anúncio">${img}</a>` : img;
-        const verLink = link ? `<a class="ad-link" href="${link}" target="_blank" rel="noopener">Ver anúncio ↗</a>` : "";
+        const thumb = link && img ? `<a href="${link}" target="_blank" rel="noopener" title="${T("Abrir anúncio")}">${img}</a>` : img;
+        const verLink = link ? `<a class="ad-link" href="${link}" target="_blank" rel="noopener">${T("Ver anúncio ↗")}</a>` : "";
         return `
         <div class="ad-card" style="position:relative">
           <div class="rank-badge">${i + 1}</div>
@@ -281,7 +457,7 @@
             ${verLink}
           </div></div>`;
       }).join("")
-      : `<div class="empty">Sem anúncios TikTok com investimento relevante no período.</div>`;
+      : `<div class="empty">${T("Sem anúncios TikTok com investimento relevante no período.")}</div>`;
   }
 
   // ---- Comentario unico ----
@@ -313,12 +489,12 @@
   // ---- Melhores anuncios ----
   function renderBestAds(ads) {
     const wrap = $("best-ads");
-    if (!ads || !ads.length) { wrap.innerHTML = `<div class="empty">Sem anúncios com investimento relevante.</div>`; return; }
+    if (!ads || !ads.length) { wrap.innerHTML = `<div class="empty">${T("Sem anúncios com investimento relevante.")}</div>`; return; }
     wrap.innerHTML = ads.map((a, i) => {
       const link = a.permalink || "";
       const img = `<img class="thumb" src="${a.thumbnail}" alt="Print do anuncio" loading="lazy" onerror="this.style.display='none'">`;
-      const thumb = link ? `<a href="${link}" target="_blank" rel="noopener" title="Abrir anúncio">${img}</a>` : img;
-      const verLink = link ? `<a class="ad-link" href="${link}" target="_blank" rel="noopener">Ver anúncio ↗</a>` : "";
+      const thumb = link ? `<a href="${link}" target="_blank" rel="noopener" title="${T("Abrir anúncio")}">${img}</a>` : img;
+      const verLink = link ? `<a class="ad-link" href="${link}" target="_blank" rel="noopener">${T("Ver anúncio ↗")}</a>` : "";
       return `
       <div class="ad-card" style="position:relative">
         <div class="rank-badge">${i + 1}</div>
@@ -336,18 +512,18 @@
   // ---- Campanhas por plataforma ----
   function renderCampaigns(rows) {
     const wrap = $("campaigns-wrap");
-    if (!rows || !rows.length) { wrap.innerHTML = `<div class="empty">Sem campanhas no período.</div>`; return; }
+    if (!rows || !rows.length) { wrap.innerHTML = `<div class="empty">${T("Sem campanhas no período.")}</div>`; return; }
     // Colunas extras (views de video, visitas ao Instagram, engajamento) so aparecem
     // se houver valor > 0 em alguma campanha — respeita a regra de ocultar zerados.
     const extra = [
-      { key: "video_views", label: "Views vídeo", fmt: "int" },
-      { key: "profile_visits", label: "Visitas IG", fmt: "int" },
-      { key: "engagement", label: "Engaj.", fmt: "int" },
+      { key: "video_views", label: T("Views vídeo"), fmt: "int" },
+      { key: "profile_visits", label: T("Visitas IG"), fmt: "int" },
+      { key: "engagement", label: T("Engaj."), fmt: "int" },
     ].filter((c) => rows.some((r) => (r[c.key] || 0) > 0));
     const extraHead = extra.map((c) => `<th>${c.label}</th>`).join("");
     const body = rows.map((r) => {
       const extraCells = extra.map((c) => `<td>${fmt(r[c.key], c.fmt)}</td>`).join("");
-      const dot = `<span class="status-dot ${r.ativo ? "on" : "off"}" title="${r.ativo ? "Em veiculação" : "Não ativa no momento"}"></span>`;
+      const dot = `<span class="status-dot ${r.ativo ? "on" : "off"}" title="${r.ativo ? T("Em veiculação") : T("Não ativa no momento")}"></span>`;
       const orc = r.orcamento_diario ? fmt(r.orcamento_diario, "currency") : "—";
       return `<tr>
         <td class="status-cell">${dot}</td>
@@ -357,9 +533,9 @@
         <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.ctr, "pct")}</td>
         <td>${fmt(r.conversions, "int")}</td><td>${fmt(r.cpa, "currency")}</td>${extraCells}</tr>`;
     }).join("");
-    wrap.innerHTML = `<table><thead><tr><th title="Verde = em veiculação · Vermelho = inativa">●</th>
-      <th>Plataforma</th><th>Campanha</th><th>Objetivo</th>
-      <th title="Orçamento diário">Orç./dia</th><th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
+    wrap.innerHTML = `<table><thead><tr><th title="${T("Verde = em veiculação · Vermelho = inativa")}">●</th>
+      <th>${T("Plataforma")}</th><th>${T("Campanha")}</th><th>${T("Objetivo")}</th>
+      <th title="${T("Orçamento diário")}">${T("Orç./dia")}</th><th>${T("Invest.")}</th><th>${T("Impr.")}</th><th>${T("Cliques")}</th><th>CTR</th><th>${T("Conv.")}</th><th>CPA</th>${extraHead}</tr></thead>
       <tbody>${body}</tbody></table>`;
   }
 
@@ -380,9 +556,9 @@
   // pelas tabelas de conjuntos e de anúncios.
   function extraCols(rows) {
     return [
-      { key: "video_views", label: "Views vídeo", fmt: "int" },
-      { key: "profile_visits", label: "Visitas IG", fmt: "int" },
-      { key: "engagement", label: "Engaj.", fmt: "int" },
+      { key: "video_views", label: T("Views vídeo"), fmt: "int" },
+      { key: "profile_visits", label: T("Visitas IG"), fmt: "int" },
+      { key: "engagement", label: T("Engaj."), fmt: "int" },
     ].filter((c) => rows.some((r) => (r[c.key] || 0) > 0));
   }
 
@@ -403,14 +579,14 @@
     let rows = _adsetData;
     if (camp) rows = rows.filter((r) => r.campanha === camp);
     if (!rows.length) {
-      wrap.innerHTML = `<div class="empty">Sem conjuntos/grupos no período${camp ? " para esta campanha" : ""}.</div>`;
+      wrap.innerHTML = `<div class="empty">${T("Sem conjuntos/grupos no período")}${camp ? T(" para esta campanha") : ""}.</div>`;
       return;
     }
     const extra = extraCols(rows);
     const extraHead = extra.map((c) => `<th>${c.label}</th>`).join("");
     const body = rows.map((r) => {
       const extraCells = extra.map((c) => `<td>${fmt(r[c.key], c.fmt)}</td>`).join("");
-      const dot = `<span class="status-dot ${r.ativo ? "on" : "off"}" title="${r.ativo ? "Em veiculação" : "Não ativo no momento"}"></span>`;
+      const dot = `<span class="status-dot ${r.ativo ? "on" : "off"}" title="${r.ativo ? T("Em veiculação") : T("Não ativo no momento")}"></span>`;
       return `<tr>
         <td class="status-cell">${dot}</td>
         <td><span class="plat ${r.plataforma.toLowerCase()}">${r.plataforma}</span></td>
@@ -419,9 +595,9 @@
         <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.ctr, "pct")}</td>
         <td>${fmt(r.conversions, "int")}</td><td>${fmt(r.cpa, "currency")}</td>${extraCells}</tr>`;
     }).join("");
-    wrap.innerHTML = `<table><thead><tr><th title="Verde = em veiculação · Vermelho = inativo">●</th>
-      <th>Plataforma</th><th>Campanha</th><th>Conjunto / Grupo</th><th>Objetivo</th>
-      <th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
+    wrap.innerHTML = `<table><thead><tr><th title="${T("Verde = em veiculação · Vermelho = inativo")}">●</th>
+      <th>${T("Plataforma")}</th><th>${T("Campanha")}</th><th>${T("Conjunto / Grupo")}</th><th>${T("Objetivo")}</th>
+      <th>${T("Invest.")}</th><th>${T("Impr.")}</th><th>${T("Cliques")}</th><th>CTR</th><th>${T("Conv.")}</th><th>CPA</th>${extraHead}</tr></thead>
       <tbody>${body}</tbody></table>`;
   }
 
@@ -455,14 +631,14 @@
     if (camp) rows = rows.filter((r) => r.campanha === camp);
     if (camp && conj) rows = rows.filter((r) => r.conjunto === conj);
     if (!rows.length) {
-      wrap.innerHTML = `<div class="empty">Sem anúncios veiculados no período${camp ? " para este filtro" : ""}.</div>`;
+      wrap.innerHTML = `<div class="empty">${T("Sem anúncios veiculados no período")}${camp ? T(" para este filtro") : ""}.</div>`;
       return;
     }
     const extra = extraCols(rows);
     const extraHead = extra.map((c) => `<th>${c.label}</th>`).join("");
     const body = rows.map((r) => {
       const extraCells = extra.map((c) => `<td>${fmt(r[c.key], c.fmt)}</td>`).join("");
-      const dot = `<span class="status-dot ${r.ativo ? "on" : "off"}" title="${r.ativo ? "Em veiculação" : "Não ativo no momento"}"></span>`;
+      const dot = `<span class="status-dot ${r.ativo ? "on" : "off"}" title="${r.ativo ? T("Em veiculação") : T("Não ativo no momento")}"></span>`;
       return `<tr>
         <td class="status-cell">${dot}</td>
         <td><span class="plat ${r.plataforma.toLowerCase()}">${r.plataforma}</span></td>
@@ -471,9 +647,9 @@
         <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.ctr, "pct")}</td>
         <td>${fmt(r.conversions, "int")}</td><td>${fmt(r.cpa, "currency")}</td>${extraCells}</tr>`;
     }).join("");
-    wrap.innerHTML = `<table><thead><tr><th title="Verde = em veiculação · Vermelho = inativo">●</th>
-      <th>Plataforma</th><th>Anúncio</th><th>Campanha</th><th>Conjunto</th><th>Objetivo</th>
-      <th>Invest.</th><th>Impr.</th><th>Cliques</th><th>CTR</th><th>Conv.</th><th>CPA</th>${extraHead}</tr></thead>
+    wrap.innerHTML = `<table><thead><tr><th title="${T("Verde = em veiculação · Vermelho = inativo")}">●</th>
+      <th>${T("Plataforma")}</th><th>${T("Anúncio")}</th><th>${T("Campanha")}</th><th>${T("Conjunto")}</th><th>${T("Objetivo")}</th>
+      <th>${T("Invest.")}</th><th>${T("Impr.")}</th><th>${T("Cliques")}</th><th>CTR</th><th>${T("Conv.")}</th><th>CPA</th>${extraHead}</tr></thead>
       <tbody>${body}</tbody></table>`;
   }
 
@@ -490,8 +666,8 @@
       <td>${k.keyword}</td><td>${fmt(k.clicks, "int")}</td><td>${fmt(k.ctr, "pct")}</td>
       <td>${fmt(k.cpc, "currency")}</td><td>${fmt(k.conversions, "int")}</td>
       <td>${fmt(k.cpa, "currency")}</td><td>${fmt(k.roas, "ratio")}</td></tr>`).join("");
-    wrap.innerHTML = `<table><thead><tr><th>Palavra-chave</th><th>Cliques</th><th>CTR</th>
-      <th>CPC</th><th>Conv.</th><th>CPA</th><th>ROAS</th></tr></thead><tbody>${rows}</tbody></table>`;
+    wrap.innerHTML = `<table><thead><tr><th>${T("Palavra-chave")}</th><th>${T("Cliques")}</th><th>CTR</th>
+      <th>CPC</th><th>${T("Conv.")}</th><th>CPA</th><th>ROAS</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   // ---- Comparativo de plataforma ----
@@ -502,10 +678,10 @@
     const cells = (key, kind) => `<td>${fmt(m[key], kind)}</td><td>${fmt(g[key], kind)}</td>` +
       (t ? `<td>${fmt(t[key], kind)}</td>` : "");
     $("platform-table").innerHTML = `<table>
-      <thead><tr><th>Métrica</th>${th}</tr></thead><tbody>
-        <tr><td>Investimento</td>${cells("spend", "currency")}</tr>
-        <tr><td>Cliques</td>${cells("clicks", "int")}</tr>
-        <tr><td>Conversões</td>${cells("conversions", "int")}</tr>
+      <thead><tr><th>${T("Métrica")}</th>${th}</tr></thead><tbody>
+        <tr><td>${T("Investimento")}</td>${cells("spend", "currency")}</tr>
+        <tr><td>${T("Cliques")}</td>${cells("clicks", "int")}</tr>
+        <tr><td>${T("Conversões")}</td>${cells("conversions", "int")}</tr>
         <tr><td>CPC</td>${cells("cpc", "currency")}</tr>
       </tbody></table>`;
     const ctx = $("platform-chart");
@@ -517,7 +693,7 @@
     if (t) datasets.push({ label: "TikTok", data: [t.spend, t.clicks, t.conversions], backgroundColor: "#ff4d67" });
     platformChart = new Chart(ctx, {
       type: "bar",
-      data: { labels: ["Investimento", "Cliques", "Conversões"], datasets },
+      data: { labels: [T("Investimento"), T("Cliques"), T("Conversões")], datasets },
       options: baseOpts({ stacked: false }),
     });
   }
@@ -528,12 +704,12 @@
       const cls = r.delta_pct === null ? "" : r.good ? "delta-up" : "delta-down";
       const dtxt = r.delta_pct === null ? "—" :
         (r.delta_pct > 0 ? "▲" : r.delta_pct < 0 ? "▼" : "■") + " " +
-        Math.abs(r.delta_pct).toFixed(1).replace(".", ",") + "%";
+        pctVar(r.delta_pct);
       return `<tr><td>${r.label}</td><td>${fmt(r.current, r.fmt)}</td>
         <td>${fmt(r.previous, r.fmt)}</td><td class="${cls}">${dtxt}</td></tr>`;
     }).join("");
-    $("period-wrap").innerHTML = `<table><thead><tr><th>Métrica</th><th>Atual</th>
-      <th>Anterior</th><th>Variação</th></tr></thead><tbody>${rows}</tbody></table>`;
+    $("period-wrap").innerHTML = `<table><thead><tr><th>${T("Métrica")}</th><th>${T("Atual")}</th>
+      <th>${T("Anterior")}</th><th>${T("Variação")}</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   // ---- Serie temporal ----
@@ -542,11 +718,11 @@
     if (trendChart) trendChart.destroy();
     if (!s || !s.labels) return;
     const datasets = [
-      { type: "bar", label: "Investimento (R$)", data: s.spend, backgroundColor: "rgba(91,140,255,.45)", yAxisID: "y", order: 3 },
-      { type: "line", label: "Cliques", data: s.clicks, borderColor: "#2ecc8f", backgroundColor: "#2ecc8f", tension: .3, yAxisID: "y1", order: 2, pointRadius: 2 },
+      { type: "bar", label: `${T("Investimento")} (${MOEDA.simbolo})`, data: s.spend, backgroundColor: "rgba(91,140,255,.45)", yAxisID: "y", order: 3 },
+      { type: "line", label: T("Cliques"), data: s.clicks, borderColor: "#2ecc8f", backgroundColor: "#2ecc8f", tension: .3, yAxisID: "y1", order: 2, pointRadius: 2 },
     ];
     if (s.tem_conversoes) {
-      datasets.push({ type: "line", label: "Conversões", data: s.conversions, borderColor: "#ffb547", backgroundColor: "#ffb547", tension: .3, yAxisID: "y1", order: 1, pointRadius: 2 });
+      datasets.push({ type: "line", label: T("Conversões"), data: s.conversions, borderColor: "#ffb547", backgroundColor: "#ffb547", tension: .3, yAxisID: "y1", order: 1, pointRadius: 2 });
     }
     trendChart = new Chart(ctx, {
       data: { labels: s.labels, datasets },
@@ -555,8 +731,8 @@
         plugins: { legend: { labels: { color: "#e6eaf2" } } },
         scales: {
           x: { ticks: { color: "#93a0b8", maxRotation: 0, autoSkip: true }, grid: { color: "#222a3a" } },
-          y: { position: "left", title: { display: true, text: "Investimento (R$)", color: "#93a0b8" }, ticks: { color: "#93a0b8" }, grid: { color: "#222a3a" } },
-          y1: { position: "right", title: { display: true, text: "Cliques / Conversões", color: "#93a0b8" }, ticks: { color: "#93a0b8" }, grid: { drawOnChartArea: false } },
+          y: { position: "left", title: { display: true, text: `${T("Investimento")} (${MOEDA.simbolo})`, color: "#93a0b8" }, ticks: { color: "#93a0b8" }, grid: { color: "#222a3a" } },
+          y1: { position: "right", title: { display: true, text: T("Cliques / Conversões"), color: "#93a0b8" }, ticks: { color: "#93a0b8" }, grid: { drawOnChartArea: false } },
         },
       },
     });
@@ -601,7 +777,7 @@
       data: {
         labels: s.labels,
         datasets: [{
-          type: "bar", label: "Novos seguidores/dia", data: s.novos,
+          type: "bar", label: T("Novos seguidores/dia"), data: s.novos,
           backgroundColor: "rgba(225,48,108,.55)", borderColor: "#e1306c", borderWidth: 1,
         }],
       },
@@ -621,8 +797,8 @@
         <td>@${esc(c.username)}</td><td>${esc(c.conta)}</td>
         <td>${fmt(c.total, "int")}</td><td>${c.novos >= 0 ? "+" : ""}${fmt(c.novos, "int")}</td>
         <td>${(c.crescimento || 0).toFixed(2).replace(".", ",")}%</td></tr>`).join("");
-      $("ig-wrap").innerHTML = `<table><thead><tr><th>Conta</th><th>Página</th>
-        <th>Seguidores</th><th>Novos</th><th>Crescimento</th></tr></thead><tbody>${linhas}</tbody></table>`;
+      $("ig-wrap").innerHTML = `<table><thead><tr><th>${T("Conta")}</th><th>${T("Página")}</th>
+        <th>${T("Seguidores")}</th><th>${T("Novos")}</th><th>${T("Crescimento")}</th></tr></thead><tbody>${linhas}</tbody></table>`;
     } else {
       $("ig-wrap").innerHTML = "";
     }
@@ -672,8 +848,8 @@
     const body = cidades.map((c, i) => `<tr>
       <td>${i + 1}</td><td>${c.city}</td><td>${fmt(c.clicks, "int")}</td></tr>`).join("");
     wrap.innerHTML = `<h3 class="geo-cities-title">Cliques por cidade (Google)</h3>
-      <div class="table-wrap"><table><thead><tr><th>#</th><th>Cidade</th>
-      <th>Cliques</th></tr></thead><tbody>${body}</tbody></table></div>`;
+      <div class="table-wrap"><table><thead><tr><th>#</th><th>${T("Cidade")}</th>
+      <th>${T("Cliques")}</th></tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
   function baseOpts({ stacked }) {

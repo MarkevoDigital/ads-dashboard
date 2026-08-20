@@ -379,3 +379,26 @@ def fetch_geo(tiktok_cfg: dict, days: int = 60) -> pd.DataFrame:
     """
     return pd.DataFrame(columns=["date", "account_id", "platform", "level", "city",
                                  "lat", "lng", "clicks"])
+
+
+def currencies(tiktok_cfg: dict) -> dict:
+    """{advertiser_id: codigo ISO da moeda}. Best-effort (falha devolve {})."""
+    token = tiktok_cfg.get("access_token")
+    if not token:
+        return {}
+    version = tiktok_cfg.get("api_version", "v1.3")
+    out = {}
+    try:
+        ids = _advertiser_ids(tiktok_cfg, token, version)
+        if not ids:
+            return {}
+        data = _get("advertiser/info",
+                    {"advertiser_ids": json.dumps(list(ids)),
+                     "fields": json.dumps(["advertiser_id", "currency"])},
+                    token, version)
+        for a in data.get("list", []):
+            if a.get("advertiser_id") and a.get("currency"):
+                out[str(a["advertiser_id"])] = str(a["currency"]).upper()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[tiktok] moedas: falhou ({exc})")
+    return out

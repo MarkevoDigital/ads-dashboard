@@ -475,3 +475,31 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                          "account_id": cid, "platform": "google", "level": "cidade",
                          "city": name, "lat": lat, "lng": lng, "clicks": clk})
     return pd.DataFrame(rows)
+
+
+def currencies(g_cfg: dict) -> dict:
+    """{customer_id: codigo ISO da moeda} das contas do MCC.
+
+    UMA query em customer_client (mesma fonte da descoberta de contas). Best-effort:
+    falha devolve {} e o dashboard cai no padrao — nunca derruba a coleta.
+    """
+    login = _digits(g_cfg.get("login_customer_id", ""))
+    if not login:
+        return {}
+    out = {}
+    try:
+        client = _client(g_cfg)
+        service = client.get_service("GoogleAdsService")
+        query = """
+            SELECT customer_client.id, customer_client.currency_code
+            FROM customer_client
+            WHERE customer_client.status = 'ENABLED'
+        """
+        for batch in service.search_stream(customer_id=login, query=query):
+            for row in batch.results:
+                cur = getattr(row.customer_client, "currency_code", "")
+                if cur:
+                    out[str(row.customer_client.id)] = str(cur).upper()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[google] moedas: falhou ({exc})")
+    return out

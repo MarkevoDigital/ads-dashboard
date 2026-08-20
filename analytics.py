@@ -16,6 +16,7 @@ import os
 import pandas as pd
 
 import metrics as M
+import i18n
 from tz_br import today_br
 
 
@@ -45,6 +46,18 @@ _FUNNEL_LABELS = {
     "leads": "Leads",
     "messaging": "Conversas",
     "conversions": "Conversões",
+    # E-commerce
+    "add_to_cart": "Adições ao carrinho",
+    "initiate_checkout": "Checkouts iniciados",
+    "purchases": "Compras",
+}
+
+# Cadeia de e-commerce: cada etapa converte da ANTERIOR (carrinho dos cliques,
+# checkout dos carrinhos, compra dos checkouts) — nao dos cliques como as demais.
+_ECOM_RATES = {
+    "add_to_cart": "Taxa de carrinho",
+    "initiate_checkout": "Taxa de checkout",
+    "purchases": "Taxa de compra",
 }
 # Ordem padrao (preserva o comportamento historico do dashboard).
 _FUNNEL_DEFAULT = ["impressions", "clicks", "conversions", "leads", "messaging",
@@ -60,6 +73,9 @@ _FUNNEL_COST = {
     "conversions":    ("CPA",            lambda s: (s["spend"] / s["conversions"]) if s["conversions"] else 0.0),
     "leads":          ("CPL",            lambda s: (s["spend"] / s["leads"]) if s["leads"] else 0.0),
     "messaging":      ("Custo/conversa", lambda s: (s["spend"] / s["messaging"]) if s["messaging"] else 0.0),
+    "add_to_cart":    ("Custo/carrinho",  lambda s: (s["spend"] / s["add_to_cart"]) if s.get("add_to_cart") else 0.0),
+    "initiate_checkout": ("Custo/checkout", lambda s: (s["spend"] / s["initiate_checkout"]) if s.get("initiate_checkout") else 0.0),
+    "purchases":      ("Custo/compra",   lambda s: (s["spend"] / s["purchases"]) if s.get("purchases") else 0.0),
 }
 
 
@@ -75,7 +91,7 @@ def _funnel_order():
     return keys or _FUNNEL_DEFAULT
 
 
-def _funnel(meta_cur, google_cur, tiktok_cur=None) -> dict:
+def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0) -> dict:
     """Funil de resultados. Cada etapa entra so se tiver valor no periodo (cliques
     sempre aparece). A ORDEM e configuravel por deploy (FUNIL_ORDEM), entao cada
     agencia prioriza etapas diferentes sem alterar codigo.
@@ -108,9 +124,22 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None) -> dict:
         elif nkey == "video_views":
             rates.append({"label": "Taxa de visualização",
                           "value": round((nv / impr) if impr else 0.0, 4)})
+        elif nkey in _ECOM_RATES:
+            # Converte da etapa ANTERIOR do funil de loja, nao dos cliques.
+            _, _, pv = seq[i]
+            rates.append({"label": _ECOM_RATES[nkey],
+                          "value": round((nv / pv) if pv else 0.0, 4)})
         else:
             rates.append({"label": f"Taxa de {nlb.lower()}",
                           "value": round((nv / clicks) if clicks else 0.0, 4)})
+
+    # Novos seguidores do Instagram: entra como ULTIMA etapa, quando houver. Fica FORA
+    # das taxas e sem custo de proposito — o numero e da CONTA inteira (anuncios +
+    # organico) e a API de Ads nao atribui seguidores por campanha, entao dividi-lo
+    # pelos cliques daria uma "taxa de conversao" falsa. O rotulo deixa isso explicito.
+    if ig_novos and round(ig_novos) > 0:
+        stages.append({"label": "Novos seguidores (conta)", "value": round(ig_novos),
+                       "fmt": "int", "organico": True})
     return {"stages": stages, "rates": rates}
 
 
@@ -642,6 +671,34 @@ def _tiktok_section(tiktok_cur, tiktok_prev, geo_df, scope, start, end) -> dict:
 # ----------------------------------------------------------------------------
 # Orquestrador
 # ----------------------------------------------------------------------------
+def _moeda_escopo(store, dfs, forcada=None) -> dict:
+    """Moeda a usar nos valores do payload.
+
+    Vem das CONTAS que o cliente realmente enxerga (store.moedas, preenchido pela API
+    de cada plataforma). Uma moeda forcada no clients.json tem prioridade — util
+    quando a descoberta falha. Se o escopo mistura moedas, marca "misto": somar sem
+    conversao seria mentira, entao a interface avisa em vez de esconder o problema.
+    """
+    mapa = getattr(store, "moedas", None) or {}
+    codigos = set()
+    for df in dfs:
+        if df is None or df.empty or "account_id" not in df.columns:
+            continue
+        for aid in df["account_id"].astype(str).unique():
+            cod = mapa.get(_digits(aid))
+            if cod:
+                codigos.add(cod)
+    if forcada:
+        info = i18n.moeda_info(forcada)
+        info["misto"] = False
+        info["codigos"] = [forcada]
+        return info
+    info = i18n.moeda_info(sorted(codigos)[0] if codigos else None)
+    info["misto"] = len(codigos) > 1
+    info["codigos"] = sorted(codigos)
+    return info
+
+
 def build_payload(store, account="todas", platform="todas", days=30, scope=None,
                   start=None, end=None) -> dict:
     meta, google = store.meta.copy(), store.google.copy()
@@ -695,6 +752,8 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         _start = _end - pd.Timedelta(days=days - 1)
         return {"vazio": True, "tem_tiktok": tem_tiktok, "tem_instagram": tem_instagram,
                 "instagram": _instagram(instagram, scope, _start, _end),
+                "moeda": _moeda_escopo(store, (meta, google, tiktok),
+                                       (scope or {}).get("moeda")),
                 "filtros": {"account": account, "platform": platform, "days": days}}
 
     # Janela: intervalo explicito (mes/personalizado) tem prioridade sobre "ultimos N dias".
@@ -747,6 +806,8 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
     # aparece no Gerenciador) — conferido campo a campo. Este valor vem da Instagram
     # Graph API e e da CONTA inteira no periodo (anuncios + organico); por isso o
     # rotulo deixa "(conta)" explicito, para nao ser lido como atribuicao da campanha.
+    ig_cur = ig_prev = 0.0
+    d_ig = None
     if tem_instagram:
         ig_cur = _ig_novos(instagram, start, end)
         ig_prev = _ig_novos(instagram, prev_start, prev_end)
@@ -760,18 +821,27 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
                     "good": M.is_good("up", d_ig), "is_primary": False,
                 })
 
+    # Comparativo dos novos seguidores vs. periodo anterior: alimenta o comentario
+    # automatico (o card do bloco de objetivo ja usa os mesmos numeros).
+    ig_payload = _instagram(instagram, scope, start, end)
+    if tem_instagram:
+        ig_payload["novos_anterior"] = int(round(ig_prev))
+        ig_payload["delta_pct"] = d_ig
+
     payload = {
         "vazio": False,
         "tem_tiktok": tem_tiktok,
         "tem_instagram": tem_instagram,
-        "instagram": _instagram(instagram, scope, start, end),
+        "instagram": ig_payload,
+        "moeda": _moeda_escopo(store, (meta_cur, google_cur, tiktok_cur),
+                               (scope or {}).get("moeda")),
         "filtros": {"account": account, "platform": platform, "days": days},
         "periodo": {
             "inicio": _fmt_date(start), "fim": _fmt_date(end),
             "anterior_inicio": _fmt_date(prev_start), "anterior_fim": _fmt_date(prev_end),
         },
         "contas": contas_visiveis,
-        "funil": _funnel(meta_cur, google_cur, tiktok_cur),
+        "funil": _funnel(meta_cur, google_cur, tiktok_cur, ig_cur),
         "investimento": _investimento(meta_cur, google_cur, meta_prev, google_prev, tiktok_cur, tiktok_prev),
         "blocos_objetivo": blocks,
         "serie_temporal": _time_series(meta_cur, google_cur, tiktok_cur, start, end),

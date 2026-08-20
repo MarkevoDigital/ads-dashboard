@@ -99,6 +99,13 @@ DEFAULT_OBJECTIVE_MAP = {
 # action_type candidatos por metrica (ordem = prioridade)
 ACTION_KEYS = {
     "purchases": ["omni_purchase", "offsite_conversion.fb_pixel_purchase", "purchase"],
+    # E-commerce: as duas etapas ANTES da compra. A ordem e a prioridade — "omni_*"
+    # consolida web + app + loja, entao vem primeiro.
+    "add_to_cart": ["omni_add_to_cart", "offsite_conversion.fb_pixel_add_to_cart",
+                    "add_to_cart", "onsite_conversion.add_to_cart"],
+    "initiate_checkout": ["omni_initiated_checkout",
+                          "offsite_conversion.fb_pixel_initiate_checkout",
+                          "initiate_checkout"],
     "leads": ["onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead", "lead"],
     "messaging_conversations": [
         "onsite_conversion.messaging_conversation_started_7d",
@@ -393,6 +400,8 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
         msg = _first_action(actions, ACTION_KEYS["messaging_conversations"])
         visits = _first_action(actions, ACTION_KEYS["profile_visits"])
         purchases = _first_action(actions, ACTION_KEYS["purchases"])
+        add_to_cart = _first_action(actions, ACTION_KEYS["add_to_cart"])
+        initiate_checkout = _first_action(actions, ACTION_KEYS["initiate_checkout"])
         leads = _first_action(actions, ACTION_KEYS["leads"])
         revenue = _first_action(action_values, ACTION_KEYS["purchases"])
         site_visits = _first_action(actions, ACTION_KEYS["site_visits"])
@@ -427,6 +436,7 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
             "messaging_conversations": msg,
             "profile_visits": visits, "leads": leads, "form_leads": form_leads,
             "purchases": purchases,
+            "add_to_cart": add_to_cart, "initiate_checkout": initiate_checkout,
             "purchase_value": revenue, "site_visits": site_visits,
             "video_views": video_views, "engagement": engagement,
         })
@@ -463,3 +473,27 @@ def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
         except Exception as exc:  # noqa: BLE001
             print(f"[meta-geo] {account_id}: {_safe(exc)}")
     return pd.DataFrame(rows)
+
+
+def currencies(meta_cfg: dict) -> dict:
+    """{account_id (so digitos): codigo ISO da moeda} das contas acessiveis.
+
+    UMA chamada para todas as contas. Best-effort: qualquer falha devolve {} e o
+    dashboard cai no padrao (BRL) — nunca derruba a coleta de dados.
+    """
+    token = meta_cfg.get("access_token")
+    if not token:
+        return {}
+    version = meta_cfg.get("api_version", "v21.0")
+    out = {}
+    try:
+        _ensure_dns()
+        url = f"{GRAPH}/{version}/me/adaccounts"
+        params = {"fields": "account_id,currency", "limit": 500, "access_token": token}
+        for a in _paged_get(url, params):
+            aid, cur = a.get("account_id"), a.get("currency")
+            if aid and cur:
+                out[str(aid)] = str(cur).upper()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[meta] moedas: falhou ({_safe(exc)})")
+    return out

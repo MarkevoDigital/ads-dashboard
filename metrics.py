@@ -36,6 +36,16 @@ KPI_CATALOG = {
     "roas":           {"label": "ROAS",                  "fmt": "ratio",    "dir": "up",      "base": "revenue",      "calc": lambda s: _safe(s["revenue"], s["spend"])},
     "cpa":            {"label": "CPA",                   "fmt": "currency", "dir": "down",    "base": "conversions",  "calc": lambda s: _safe(s["spend"], s["conversions"])},
     "conv_rate":      {"label": "Taxa de conversão",     "fmt": "pct",      "dir": "up",      "base": "conversions",  "calc": lambda s: _safe(s["conversions"], s["clicks"])},
+    # --- E-commerce: carrinho -> checkout -> compra ---------------------------
+    "add_to_cart":    {"label": "Adições ao carrinho",   "fmt": "int",      "dir": "up",      "base": "add_to_cart",  "calc": lambda s: s["add_to_cart"]},
+    "cost_per_cart":  {"label": "Custo por carrinho",    "fmt": "currency", "dir": "down",    "base": "add_to_cart",  "calc": lambda s: _safe(s["spend"], s["add_to_cart"])},
+    "cart_rate":      {"label": "Taxa de carrinho",      "fmt": "pct",      "dir": "up",      "base": "add_to_cart",  "calc": lambda s: _safe(s["add_to_cart"], s["clicks"])},
+    "checkouts":      {"label": "Checkouts iniciados",   "fmt": "int",      "dir": "up",      "base": "initiate_checkout", "calc": lambda s: s["initiate_checkout"]},
+    "cost_per_checkout": {"label": "Custo por checkout", "fmt": "currency", "dir": "down",    "base": "initiate_checkout", "calc": lambda s: _safe(s["spend"], s["initiate_checkout"])},
+    "checkout_rate":  {"label": "Taxa de checkout",      "fmt": "pct",      "dir": "up",      "base": "initiate_checkout", "calc": lambda s: _safe(s["initiate_checkout"], s["add_to_cart"])},
+    "purchases":      {"label": "Compras",               "fmt": "int",      "dir": "up",      "base": "purchases",    "calc": lambda s: s["purchases"]},
+    "cost_per_purchase": {"label": "Custo por compra",   "fmt": "currency", "dir": "down",    "base": "purchases",    "calc": lambda s: _safe(s["spend"], s["purchases"])},
+    "purchase_rate":  {"label": "Taxa de compra",        "fmt": "pct",      "dir": "up",      "base": "purchases",    "calc": lambda s: _safe(s["purchases"], s["initiate_checkout"])},
     "leads":          {"label": "Leads",                 "fmt": "int",      "dir": "up",      "base": "leads",        "calc": lambda s: s["leads"]},
     "cpl":            {"label": "Custo por lead",        "fmt": "currency", "dir": "down",    "base": "leads",        "calc": lambda s: _safe(s["spend"], s["leads"])},
     "lead_rate":      {"label": "Taxa de lead",          "fmt": "pct",      "dir": "up",      "base": "leads",        "calc": lambda s: _safe(s["leads"], s["link_clicks"])},
@@ -60,7 +70,10 @@ KPI_CATALOG = {
 OBJECTIVE_CONFIG = {
     "vendas": {
         "label": "Vendas / Conversões", "icone": "shopping-cart", "conv_label": "Conversões",
-        "kpis": ["spend", "revenue", "roas", "conversions", "cpa", "conv_rate",
+        "kpis": ["spend", "revenue", "roas", "purchases", "cost_per_purchase",
+                 "conversions", "cpa", "conv_rate",
+                 "add_to_cart", "cost_per_cart", "cart_rate",
+                 "checkouts", "cost_per_checkout", "checkout_rate", "purchase_rate",
                  "clicks", "ctr", "cpc", "impressions", "cpm", "site_visits"],
         "primary": "roas", "best_ad_metric": "roas", "conv_key": "conversions",
     },
@@ -112,7 +125,8 @@ OBJECTIVE_CONFIG = {
 # Metricas que devem aparecer em QUALQUER objetivo quando tiverem historico (>0):
 # visualizacoes de video, visitas ao Instagram e engajamento. A regra de ocultacao
 # (active_keys) garante que so aparecem se nao forem zeradas no escopo do cliente.
-_EXTRA_KPIS = ["video_views", "profile_visits", "engagement"]
+_EXTRA_KPIS = ["video_views", "profile_visits", "engagement",
+               "add_to_cart", "checkouts", "purchases"]
 
 
 def objective_config(obj: str) -> dict:
@@ -132,7 +146,7 @@ def objective_config(obj: str) -> dict:
 _META_NUM = ["impressions", "reach", "clicks", "link_clicks", "spend",
              "messaging_conversations", "profile_visits", "leads",
              "purchases", "purchase_value", "site_visits", "video_views",
-             "engagement"]
+             "engagement", "add_to_cart", "initiate_checkout"]
 _GOOGLE_NUM = ["impressions", "clicks", "cost", "conversions", "conversion_value",
                "video_views", "interactions"]
 
@@ -160,6 +174,11 @@ def _sums(meta: pd.DataFrame, google: pd.DataFrame, tiktok: pd.DataFrame = None)
         "engagement": m["engagement"] + t["engagement"],
         "interactions": g["interactions"],
         "conversions": m["purchases"] + g["conversions"] + t["purchases"],
+        # E-commerce: "purchases" e SO compra (Meta/TikTok), separado de "conversions",
+        # que mistura as conversoes do Google — num funil de loja isso importa.
+        "purchases": m["purchases"] + t["purchases"],
+        "add_to_cart": m["add_to_cart"] + t["add_to_cart"],
+        "initiate_checkout": m["initiate_checkout"] + t["initiate_checkout"],
         "revenue": m["purchase_value"] + g["conversion_value"] + t["purchase_value"],
     }
 

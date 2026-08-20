@@ -48,6 +48,7 @@ from flask import Flask, Response, g, jsonify, render_template, request
 
 import analytics
 import commentary
+import i18n
 from data_sources import STORE_CACHE, DataStore, load_clients, load_config
 
 
@@ -143,7 +144,8 @@ def _build_users():
     users = {}
     admin_pw = (clients.get("admin", {}) or {}).get("senha") or config.get("auth", {}).get("senha", "")
     if admin_pw:
-        users["admin"] = {"senha": admin_pw, "scope": None, "nome": "Agência (todos os clientes)"}
+        users["admin"] = {"senha": admin_pw, "scope": None,
+                          "nome": "Agência (todos os clientes)", "idioma": "pt"}
     for c in clients.get("clientes", []):
         users[c["key"]] = {
             "senha": c.get("senha", ""),
@@ -151,8 +153,29 @@ def _build_users():
                       "google_ids": c.get("_google_ids", set()),
                       "tiktok_ids": c.get("_tiktok_ids", set()),
                       "instagram_ids": c.get("_instagram_ids", set()),
-                      "leads_form_only": bool(c.get("leads_form_only", False))},
+                      "leads_form_only": bool(c.get("leads_form_only", False)),
+                      "moeda": c.get("_moeda")},
             "nome": c.get("nome", c["key"]),
+            "idioma": c.get("_idioma", "pt"),
+        }
+    # Agencia de grupo: um login que enxerga a UNIAO dos escopos de uma lista de
+    # clientes e pode "ver como" cada um deles - nunca nada fora da lista.
+    for a in clients.get("agencias", []):
+        subs = [k for k in a.get("clientes", [])
+                if users.get(k, {}).get("scope") is not None]
+        uniao = {"meta_ids": set(), "google_ids": set(), "tiktok_ids": set(),
+                 "instagram_ids": set(), "leads_form_only": False,
+                 "moeda": a.get("_moeda")}
+        for k in subs:
+            sc = users[k]["scope"]
+            for campo in ("meta_ids", "google_ids", "tiktok_ids", "instagram_ids"):
+                uniao[campo] |= set(sc.get(campo) or ())
+        users[a["key"]] = {
+            "senha": a.get("senha", ""),
+            "scope": uniao,
+            "nome": a.get("nome", a["key"]),
+            "idioma": a.get("_idioma", "pt"),
+            "subclientes": subs,
         }
     return users
 
@@ -282,21 +305,30 @@ def api_data():
         days = 30
 
     scope = g.client.get("scope") if hasattr(g, "client") else None
+    subclientes = g.client.get("subclientes") if hasattr(g, "client") else None
+    # Idioma da interface: do proprio login. "Ver como" um cliente adota o idioma dele,
+    # porque a proposta do seletor e mostrar exatamente o que aquele cliente enxerga.
+    idioma = (g.client.get("idioma") if hasattr(g, "client") else "pt") or "pt"
 
-    # Admin (escopo None) pode "ver como" um cliente: ?client=KEY aplica o escopo
-    # daquele cliente, exibindo exatamente o que ele ve. Tambem devolve a lista de
-    # clientes para o seletor no front.
+    # Quem pode "ver como" um cliente: o admin (escopo None, ve todos) e as agencias
+    # de grupo (so os clientes do proprio grupo). ?client=KEY aplica o escopo daquele
+    # cliente, exibindo exatamente o que ele ve; KEY fora da lista e ignorado.
     clientes_admin = None
     cliente_sel = ""
+    visiveis = None
     if scope is None and USERS:
+        visiveis = [k for k, v in USERS.items()
+                    if v.get("scope") is not None and not v.get("subclientes")]
+    elif subclientes:
+        visiveis = list(subclientes)
+    if visiveis is not None:
         clientes_admin = sorted(
-            ({"key": k, "nome": v.get("nome", k)}
-             for k, v in USERS.items() if v.get("scope") is not None),
+            ({"key": k, "nome": USERS[k].get("nome", k)} for k in visiveis),
             key=lambda c: c["nome"].lower())
         cliente_sel = request.args.get("client", "")
-        chosen = USERS.get(cliente_sel)
-        if chosen and chosen.get("scope") is not None:
-            scope = chosen["scope"]
+        if cliente_sel in visiveis:
+            scope = USERS[cliente_sel]["scope"]
+            idioma = USERS[cliente_sel].get("idioma", idioma)
         else:
             cliente_sel = ""
 
@@ -306,9 +338,12 @@ def api_data():
     # Distingue "carregando" (cache ainda vazio logo apos reiniciar) de "sem dados".
     if payload.get("vazio") and store.updated_at is None:
         payload["carregando"] = True
-    payload["comentarios"] = commentary.generate(payload)
+    i18n.traduzir_payload(payload, idioma)
+    payload["idioma"] = idioma
+    payload["comentarios"] = commentary.generate(payload, idioma)
     payload["clientes_admin"] = clientes_admin
     payload["cliente_sel"] = cliente_sel
+    payload["agencia_grupo"] = bool(subclientes)
     payload["meta_info"] = {
         "atualizado_em": store.updated_at.isoformat() if store.updated_at else None,
         "fonte": store.source_label,

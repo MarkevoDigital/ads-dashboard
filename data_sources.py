@@ -38,6 +38,9 @@ META_COLUMNS = [
     "clicks", "link_clicks", "spend", "messaging_conversations",
     "profile_visits", "leads", "form_leads", "purchases", "purchase_value",
     "site_visits", "video_views", "engagement",
+    # E-commerce (Meta/TikTok): etapas antes da compra. Zero para quem nao tem pixel
+    # de loja — a regra de ocultar zerados cuida de nao poluir o dashboard.
+    "add_to_cart", "initiate_checkout",
 ]
 GOOGLE_COLUMNS = [
     "date", "account", "account_id", "objective", "campaign", "campaign_type",
@@ -52,6 +55,7 @@ NUMERIC_META = [
     "daily_budget", "impressions", "reach", "frequency", "clicks", "link_clicks", "spend",
     "messaging_conversations", "profile_visits", "leads", "form_leads", "purchases",
     "purchase_value", "site_visits", "video_views", "engagement",
+    "add_to_cart", "initiate_checkout",
 ]
 NUMERIC_GOOGLE = [
     "daily_budget", "impressions", "clicks", "cost", "conversions", "conversion_value",
@@ -182,6 +186,13 @@ def load_clients() -> dict:
         c["_tiktok_ids"] = {only_digits(x) for x in c.get("tiktok_advertiser_ids", []) if x}
         # Instagram: so clientes com instagram_ids veem a secao de seguidores.
         c["_instagram_ids"] = {only_digits(x) for x in c.get("instagram_ids", []) if x}
+        # Idioma da interface ("pt" padrao, "en" para clientes internacionais) e
+        # moeda FORCADA (opcional). Sem "moeda", vale a que veio da API da conta.
+        c["_idioma"] = str(c.get("idioma") or "pt").lower()
+        c["_moeda"] = (str(c["moeda"]).upper() if c.get("moeda") else None)
+    for a in data.get("agencias", []):
+        a["_idioma"] = str(a.get("idioma") or "pt").lower()
+        a["_moeda"] = (str(a["moeda"]).upper() if a.get("moeda") else None)
     return data
 
 
@@ -453,6 +464,9 @@ class DataStore:
         self.tiktok = pd.DataFrame(columns=TIKTOK_COLUMNS)
         self.instagram = pd.DataFrame(columns=INSTAGRAM_COLUMNS)
         self.geo = pd.DataFrame(columns=GEO_COLUMNS)
+        # account_id (so digitos) -> codigo ISO da moeda, vindo da API de cada
+        # plataforma. Vazio = tudo cai no padrao (BRL).
+        self.moedas: dict[str, str] = {}
         self.updated_at: datetime | None = None
         self.source_label = "—"
         self._lock = threading.Lock()
@@ -465,6 +479,7 @@ class DataStore:
             self.tiktok = _coerce(tiktok_df, TIKTOK_COLUMNS, NUMERIC_TIKTOK)
             self.instagram = _coerce(self._load_instagram(label), INSTAGRAM_COLUMNS, NUMERIC_INSTAGRAM)
             self.geo = _coerce_geo(geo_df)
+            self.moedas = self._load_moedas(label)
             self.updated_at = now_br()
             self.source_label = label
             self._save_cache()
@@ -485,12 +500,58 @@ class DataStore:
         dias = int(api.get("dias_busca", 60))
         if label == "Dados de exemplo":
             return _synthesize_instagram(min(dias, 60))
+        # O conector varre TODAS as contas de IG do usuario de sistema. Num dashboard
+        # dedicado a um cliente isso traria dados de terceiros para o cache, entao:
+        #   INSTAGRAM_OFF=1        -> nao busca nada
+        #   INSTAGRAM_IDS=a,b,c    -> busca so essas contas
+        if os.environ.get("INSTAGRAM_OFF") == "1":
+            return pd.DataFrame(columns=INSTAGRAM_COLUMNS)
+        permitidos = {only_digits(x) for x in _split(os.environ.get("INSTAGRAM_IDS", "")) if x}
         try:
             from connectors import instagram_api
-            return instagram_api.fetch(api.get("meta", {}), dias)
+            df = instagram_api.fetch(api.get("meta", {}), dias)
+            if permitidos and len(df):
+                df = df[df["ig_id"].astype(str).map(only_digits).isin(permitidos)]
+            return df
         except Exception as exc:  # noqa: BLE001
             print(f"[instagram] fetch falhou (ignorado): {exc}")
             return pd.DataFrame(columns=INSTAGRAM_COLUMNS)
+
+    def _ids_configurados(self) -> set:
+        """IDs de conta fixados no deploy (env/config). Vazio = descoberta automatica."""
+        api = self.config.get("api", {})
+        ids = set()
+        for chave, campo in (("meta", "ad_account_ids"), ("google_ads", "customer_ids"),
+                             ("tiktok", "advertiser_ids")):
+            for x in (api.get(chave, {}).get(campo) or []):
+                d = only_digits(x)
+                if d:
+                    ids.add(d)
+        return ids
+
+    def _load_moedas(self, label: str) -> dict:
+        """Moeda de cada conta, direto da API de cada plataforma. Best-effort por
+        plataforma: uma falhar nao afeta as outras nem os dados de anuncios."""
+        if label == "Dados de exemplo":
+            return {}
+        api = self.config.get("api", {})
+        out = {}
+        # ATENCAO: a chave do Google no config e "google_ads" (nao "google"). Usar o
+        # nome do modulo aqui deixava o Google FORA do mapa, sem erro nenhum.
+        for nome, cfg_key in (("meta", "meta"), ("google", "google_ads"), ("tiktok", "tiktok")):
+            try:
+                mod = __import__(f"connectors.{nome}_api", fromlist=["currencies"])
+                achado = mod.currencies(api.get(cfg_key, {})) or {}
+                out.update({only_digits(k): v for k, v in achado.items() if only_digits(k)})
+            except Exception as exc:  # noqa: BLE001
+                print(f"[{nome}] moedas indisponiveis: {exc}")
+        # Deploy restrito a contas especificas: o mapa nao guarda moeda de conta alheia.
+        alvo = self._ids_configurados()
+        if alvo:
+            out = {k: v for k, v in out.items() if k in alvo}
+        if out:
+            print(f"[moedas] {len(out)} conta(s) mapeada(s): {sorted(set(out.values()))}")
+        return out
 
     def _save_cache(self) -> None:
         """Persiste o store em disco (best-effort). Chamado dentro do lock no fim
@@ -502,6 +563,7 @@ class DataStore:
                 pickle.dump({
                     "meta": self.meta, "google": self.google, "tiktok": self.tiktok,
                     "instagram": self.instagram, "geo": self.geo,
+                    "moedas": self.moedas,
                     "updated_at": self.updated_at, "source_label": self.source_label,
                 }, fh, protocol=pickle.HIGHEST_PROTOCOL)
             os.replace(tmp, STORE_CACHE)
@@ -532,6 +594,8 @@ class DataStore:
                 ig = data.get("instagram")
                 self.instagram = ig if ig is not None else pd.DataFrame(columns=INSTAGRAM_COLUMNS)
                 self.geo = data["geo"]
+                # retrocompat: pickles anteriores as moedas nao tem a chave
+                self.moedas = data.get("moedas") or {}
                 self.updated_at = ts
                 self.source_label = data.get("source_label") or "—"
             return True
@@ -608,10 +672,16 @@ class DataStore:
             google_ligado = bool(g_api.get("developer_token") and g_api.get("refresh_token")
                                  and (g_api.get("customer_ids") or g_api.get("login_customer_id")))
             meta_ligado = bool(api.get("meta", {}).get("access_token"))
-            if google_ligado and google_df.empty and not meta_df.empty:
+            # Escape hatch por deploy: num dashboard restrito a UM cliente, "0 linhas"
+            # numa plataforma pode ser legitimo (ele simplesmente nao veicula la). Sem
+            # isso o guard aborta todo refresh para sempre. Ex.: PLATAFORMAS_SEM_DADOS=google
+            sem_dados_ok = {p.strip().lower()
+                            for p in os.environ.get("PLATAFORMAS_SEM_DADOS", "").split(",")
+                            if p.strip()}
+            if google_ligado and google_df.empty and not meta_df.empty                     and "google" not in sem_dados_ok:
                 raise RuntimeError("Google Ads configurado retornou 0 linhas (descoberta/fetch "
                                    "falhou) — refresh abortado para preservar o cache anterior.")
-            if meta_ligado and meta_df.empty and not google_df.empty:
+            if meta_ligado and meta_df.empty and not google_df.empty                     and "meta" not in sem_dados_ok:
                 raise RuntimeError("Meta Ads configurado retornou 0 linhas (token expirado? "
                                    "contas inacessiveis?) — refresh abortado para preservar o "
                                    "cache anterior.")

@@ -532,6 +532,14 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
         # campanhas com objetivo de geracao de leads. Coluna paralela usada por clientes
         # com a flag leads_form_only no clients.json (ex.: IPV7), para baterem com o
         # gerenciador (a coluna "leads" padrao soma form + pixel + genericos).
+        # A Meta NAO devolve acao de visita ao perfil para campanha de trafego que
+        # aponta para o Instagram (objetivo LINK_CLICKS / destino INSTAGRAM_PROFILE):
+        # o gerenciador mostra "visitas ao perfil", mas a API nao traz nenhuma acao
+        # ig_profile_visit -- o resultado chegava zerado. Nesse tipo de campanha o
+        # clique no link e o mesmo numero na pratica, entao ele vira o resultado, em
+        # vez de a campanha aparecer sem nenhum. So preenche quando a acao real falta.
+        if objective == "visitas_instagram" and not visits:
+            visits = float(r.get("inline_link_clicks", 0) or 0)
         form_leads = (_first_action(actions, ["onsite_conversion.lead_grouped"])
                       if objective == "leads" else 0.0)
         ad_id = r.get("ad_id", "")

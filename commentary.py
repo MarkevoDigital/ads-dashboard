@@ -210,6 +210,11 @@ def generate(payload: dict, idioma: str = "pt") -> dict:
         m = by_key.get(key)
         if not m or m.get("delta_pct") is None or not m.get("good"):
             continue
+        # Metrica zerada nao e conquista: custo por resultado so chega a zero quando
+        # NAO houve resultado no periodo (CPA "reduziu 100%, agora R$ 0,00" com zero
+        # compras). A queda e ausencia de dado, nao eficiencia -- a linha sai.
+        if not m.get("current"):
+            continue
         d = m["delta_pct"]
         if abs(d) < 1:
             continue

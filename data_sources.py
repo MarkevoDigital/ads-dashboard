@@ -190,6 +190,13 @@ def load_clients() -> dict:
         # moeda FORCADA (opcional). Sem "moeda", vale a que veio da API da conta.
         c["_idioma"] = str(c.get("idioma") or "pt").lower()
         c["_moeda"] = (str(c["moeda"]).upper() if c.get("moeda") else None)
+        # Funil proprio (opcional): lista de etapas em clients.json, ex.
+        # "funil_ordem": ["impressions","video_views","add_to_cart",
+        #                 "initiate_checkout","purchases"]. Vazio = funil do deploy.
+        _fo = c.get("funil_ordem")
+        if isinstance(_fo, str):
+            _fo = _fo.split(",")
+        c["_funil_ordem"] = [str(k).strip() for k in (_fo or []) if str(k).strip()]
     for a in data.get("agencias", []):
         a["_idioma"] = str(a.get("idioma") or "pt").lower()
         a["_moeda"] = (str(a["moeda"]).upper() if a.get("moeda") else None)

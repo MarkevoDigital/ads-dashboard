@@ -79,11 +79,21 @@ _FUNNEL_COST = {
 }
 
 
-def _funnel_order():
+def _funnel_order(ordem=None):
     """Ordem das etapas do funil — configuravel por deploy via env FUNIL_ORDEM
     (chaves de _FUNNEL_LABELS separadas por virgula). Ex.:
       FUNIL_ORDEM=impressions,video_views,clicks,profile_visits,leads,messaging
-    Chaves invalidas sao ignoradas; sem a env, usa a ordem padrao."""
+    Chaves invalidas sao ignoradas; sem a env, usa a ordem padrao.
+
+    Uma ordem vinda do PROPRIO CLIENTE (clients.json -> "funil_ordem") tem
+    prioridade: assim uma loja e um cliente de leads convivem no mesmo deploy,
+    cada um com o seu funil."""
+    if ordem:
+        if isinstance(ordem, str):
+            ordem = ordem.split(",")
+        keys = [str(k).strip() for k in ordem if str(k).strip() in _FUNNEL_LABELS]
+        if keys:
+            return keys
     raw = os.environ.get("FUNIL_ORDEM", "").strip()
     if not raw:
         return _FUNNEL_DEFAULT
@@ -91,7 +101,7 @@ def _funnel_order():
     return keys or _FUNNEL_DEFAULT
 
 
-def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0) -> dict:
+def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0, ordem=None) -> dict:
     """Funil de resultados. Cada etapa entra so se tiver valor no periodo (cliques
     sempre aparece). A ORDEM e configuravel por deploy (FUNIL_ORDEM), entao cada
     agencia prioriza etapas diferentes sem alterar codigo.
@@ -111,7 +121,7 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0) -> dict:
         if df is not None and not df.empty and "objective" in df.columns)
     impr = round(s["impressions"])
     seq = []  # (key, label, value)
-    for key in _funnel_order():
+    for key in _funnel_order(ordem):
         val = round(s.get(key, 0))
         if val > 0 or key == "clicks":
             seq.append((key, _FUNNEL_LABELS[key], val))
@@ -861,7 +871,8 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
             "anterior_inicio": _fmt_date(prev_start), "anterior_fim": _fmt_date(prev_end),
         },
         "contas": contas_visiveis,
-        "funil": _funnel(meta_cur, google_cur, tiktok_cur, ig_cur),
+        "funil": _funnel(meta_cur, google_cur, tiktok_cur, ig_cur,
+                         (scope or {}).get("funil_ordem")),
         "investimento": _investimento(meta_cur, google_cur, meta_prev, google_prev, tiktok_cur, tiktok_prev),
         "blocos_objetivo": blocks,
         "serie_temporal": _time_series(meta_cur, google_cur, tiktok_cur, start, end),

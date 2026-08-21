@@ -154,7 +154,8 @@ def _build_users():
                       "tiktok_ids": c.get("_tiktok_ids", set()),
                       "instagram_ids": c.get("_instagram_ids", set()),
                       "leads_form_only": bool(c.get("leads_form_only", False)),
-                      "moeda": c.get("_moeda")},
+                      "moeda": c.get("_moeda"),
+                      "funil_ordem": c.get("_funil_ordem")},
             "nome": c.get("nome", c["key"]),
             "idioma": c.get("_idioma", "pt"),
         }

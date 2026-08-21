@@ -284,6 +284,11 @@ def _best_ads(meta_cur, limit=6) -> list[dict]:
         result_key = cfg["conv_key"]
         result_spec = M.KPI_CATALOG[result_key]
         result_value = M.kpi_value(g, empty, result_key)
+        # Sem resultado nao e destaque: o anuncio so lidera porque a lista ordena por
+        # resultado e ninguem pontuou no periodo. Vale para o card do Meta e para o da
+        # secao TikTok (as duas usam esta funcao); os comentarios ja aplicavam a regra.
+        if result_value <= 0:
+            continue
         # SECUNDARIA = eficiencia por resultado (custo por resultado / ROAS do objetivo)
         eff_key = cfg["best_ad_metric"]
         eff_spec = M.KPI_CATALOG[eff_key]

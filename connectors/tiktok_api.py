@@ -105,6 +105,16 @@ _METRICS = [
     "campaign_name", "adgroup_name", "ad_name", "objective_type",
 ]
 
+# E-commerce pedido em SEPARADO de proposito: uma metrica invalida derruba o relatorio
+# INTEIRO (erro 40002), entao o conector tenta com elas e, se o TikTok recusar, refaz a
+# chamada sem elas -- os dados basicos nunca se perdem por causa de um extra.
+#
+# NAO existe metrica de "adicionar ao carrinho" na API v1.3: testadas ~40 grafias
+# (add_to_cart, on_web_cart, onsite_add_to_cart, cart, total_add_to_cart, web_cart...)
+# e todas voltam "invalid metric". O TikTok expoe checkout e pagamento, mas nao o
+# carrinho -- essa etapa do funil fica so com o Meta ate a API oferecer.
+_METRICS_ECOM = ["initiate_checkout", "complete_payment"]
+
 
 def _num(v) -> float:
     try:
@@ -261,6 +271,7 @@ def _report_rows(advertiser_id: str, token: str, version: str, since, until) -> 
     O TikTok limita o relatorio por stat_time_day a 30 dias por requisicao (code 40002)
     -> fatiamos o intervalo em janelas de ate 30 dias e concatenamos."""
     out = []
+    com_ecom = True   # vira False se a conta nao aceitar as metricas de e-commerce
     win_start = since
     while win_start <= until:
         win_end = min(win_start + timedelta(days=29), until)
@@ -271,11 +282,19 @@ def _report_rows(advertiser_id: str, token: str, version: str, since, until) -> 
                 "report_type": "BASIC",
                 "data_level": "AUCTION_AD",
                 "dimensions": json.dumps(["ad_id", "stat_time_day"]),
-                "metrics": json.dumps(_METRICS),
+                "metrics": json.dumps(_METRICS + (_METRICS_ECOM if com_ecom else [])),
                 "start_date": str(win_start), "end_date": str(win_end),
                 "page": page, "page_size": 1000,
             }
-            data = _get("report/integrated/get", params, token, version)
+            try:
+                data = _get("report/integrated/get", params, token, version)
+            except Exception as exc:  # noqa: BLE001
+                if not com_ecom:
+                    raise
+                print(f"[tiktok] {advertiser_id}: metricas de e-commerce recusadas "
+                      f"({str(exc)[:110]}); seguindo sem elas.")
+                com_ecom = False
+                continue
             out.extend(data.get("list", []))
             info = data.get("page_info", {}) or {}
             total_page = info.get("total_page") or 1
@@ -325,6 +344,10 @@ def _fetch_advertiser_rows(advertiser_id, adv_name, token, version, since, until
             "profile_visits": 0.0,
             "leads": 0.0,
             "purchases": 0.0,
+            # Carrinho: ver _METRICS_ECOM -- a API nao expoe. Fica zerado (o funil soma
+            # so o que e real) em vez de inventar um proxy.
+            "add_to_cart": 0.0,
+            "initiate_checkout": _num(met.get("initiate_checkout")),
             "purchase_value": _num(met.get("total_purchase_value")),
             "site_visits": 0.0,
             "video_views": _num(met.get("video_play_actions")),
@@ -336,6 +359,11 @@ def _fetch_advertiser_rows(advertiser_id, adv_name, token, version, since, until
             row[col] = row.get(col, 0.0) + conversion
         elif bucket == "outros":
             row["purchases"] = row.get("purchases", 0.0) + conversion
+        # complete_payment e o sinal DIRETO de compra. Quando existe, vale mais que a
+        # "conversion" generica acima, que e so o que o conjunto escolheu otimizar.
+        pagamentos = _num(met.get("complete_payment"))
+        if pagamentos:
+            row["purchases"] = pagamentos
         rows.append(row)
     return rows
 

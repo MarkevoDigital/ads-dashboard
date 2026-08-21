@@ -300,7 +300,10 @@ def generate(payload: dict, idioma: str = "pt") -> dict:
         destaques.append(_ig_destaque(ig, T, sim, idioma))
 
     # 3) Melhor anuncio (destaque = nº de resultados; eficiencia como apoio)
-    ads = payload.get("melhores_anuncios") or []
+    # Anuncio com ZERO resultado nao e "bom candidato a escalar": ele so lidera a
+    # lista porque ninguem pontuou no periodo. Ficam de fora; se nenhum pontuou, a
+    # linha nao sai. Nao ha o que escalar.
+    ads = [a for a in (payload.get("melhores_anuncios") or []) if a.get("result_value")]
     if ads:
         a = ads[0]
         txt = T["melhor_ad"].format(nome=a["ad_name"], v=f(a["result_value"], a["result_fmt"]),

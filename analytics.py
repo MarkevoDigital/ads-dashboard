@@ -42,6 +42,7 @@ _FUNNEL_LABELS = {
     "impressions": "Impressões",
     "video_views": "Visualizações de vídeo",
     "clicks": "Cliques",
+    "engagement": "Engajamentos",
     "profile_visits": "Visitas ao perfil",
     "leads": "Leads",
     "messaging": "Conversas",
@@ -69,6 +70,7 @@ _FUNNEL_COST = {
     "impressions":    ("CPM",            lambda s: (s["spend"] / s["impressions"] * 1000) if s["impressions"] else 0.0),
     "video_views":    ("Custo/view",     lambda s: (s["spend"] / s["video_views"]) if s["video_views"] else 0.0),
     "clicks":         ("CPC",            lambda s: (s["spend"] / s["clicks"]) if s["clicks"] else 0.0),
+    "engagement":     ("Custo/engajamento", lambda s: (s["spend"] / s["engagement"]) if s.get("engagement") else 0.0),
     "profile_visits": ("Custo/visita",   lambda s: (s["spend"] / s["profile_visits"]) if s["profile_visits"] else 0.0),
     "conversions":    ("CPA",            lambda s: (s["spend"] / s["conversions"]) if s["conversions"] else 0.0),
     "leads":          ("CPL",            lambda s: (s["spend"] / s["leads"]) if s["leads"] else 0.0),
@@ -141,6 +143,12 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0, ordem=None) -> 
         nkey, nlb, nv = seq[i + 1]
         if nkey == "clicks":
             rates.append({"label": "CTR", "value": round((nv / impr) if impr else 0.0, 4)})
+        elif nkey == "engagement":
+            # Engajamento sai das IMPRESSOES, como a taxa de visualizacao: dividir
+            # pelos cliques daria taxa acima de 100% quase sempre (curtida, comentario
+            # e compartilhamento nao exigem clique).
+            rates.append({"label": "Taxa de engajamento",
+                          "value": round((nv / impr) if impr else 0.0, 4)})
         elif nkey == "video_views":
             rates.append({"label": "Taxa de visualização",
                           "value": round((nv / impr) if impr else 0.0, 4)})

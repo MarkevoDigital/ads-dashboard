@@ -81,6 +81,24 @@ _FUNNEL_COST = {
 }
 
 
+# Etapa de DESFECHO do funil -> objetivo de campanha que a justifica.
+_ETAPA_OBJETIVO = {
+    "messaging": {"mensagens"},
+    # Lead tambem nasce de campanha de CONVERSAO: "[LEADS] [SITE] PREVENT MASTER"
+    # otimiza por conversao offsite e cai no bucket "vendas", mas gera lead de verdade.
+    # O mapa e generoso de proposito -- ele existe para tirar o desfecho ORFAO, nao
+    # para brigar com a classificacao de objetivo.
+    "leads": {"leads", "vendas"},
+    "profile_visits": {"visitas_instagram", "trafego", "engajamento"},
+    "add_to_cart": {"vendas"},
+    "initiate_checkout": {"vendas"},
+    "purchases": {"vendas"},
+}
+# Impressoes, cliques, video e engajamento ficam FORA do mapa de proposito: sao
+# subproduto de qualquer veiculacao (todo anuncio gera impressao, todo criativo em
+# video gera view), entao nao dependem do objetivo da campanha.
+
+
 def _funnel_order(ordem=None):
     """Ordem das etapas do funil — configuravel por deploy via env FUNIL_ORDEM
     (chaves de _FUNNEL_LABELS separadas por virgula). Ex.:
@@ -122,9 +140,23 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0, ordem=None) -> 
         for df in (meta_cur, google_cur, tiktok_cur)
         if df is not None and not df.empty and "objective" in df.columns)
     impr = round(s["impressions"])
+    # Sem ordem propria do cliente, o funil segue as CAMPANHAS do periodo: etapa de
+    # desfecho so entra se existe campanha com aquele objetivo. Sem isso, uma conversa
+    # acidental numa conta que so roda visita ao perfil virava etapa do funil. Objetivo
+    # "outros" (nao identificado) desliga o filtro, para nunca esconder dado real.
+    objetivos = set()
+    for df in (meta_cur, google_cur, tiktok_cur):
+        if df is not None and not df.empty and "objective" in df.columns:
+            objetivos |= set(df["objective"].dropna().unique())
+    # Atencao: cliente sem funil proprio chega aqui com [] (nao None), entao a
+    # checagem e por truthiness -- lista vazia = usa o padrao = filtra.
+    filtrar = not ordem and "outros" not in objetivos
+
     seq = []  # (key, label, value)
     for key in _funnel_order(ordem):
         val = round(s.get(key, 0))
+        if filtrar and key in _ETAPA_OBJETIVO and not (_ETAPA_OBJETIVO[key] & objetivos):
+            continue
         if val > 0 or key == "clicks":
             seq.append((key, _FUNNEL_LABELS[key], val))
 

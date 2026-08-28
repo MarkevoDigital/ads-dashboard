@@ -43,6 +43,7 @@ _FUNNEL_LABELS = {
     "video_views": "Visualizações de vídeo",
     "clicks": "Cliques",
     "engagement": "Engajamentos",
+    "registrations": "Inscrições",
     "profile_visits": "Visitas ao perfil",
     "leads": "Leads",
     "messaging": "Conversas",
@@ -71,6 +72,7 @@ _FUNNEL_COST = {
     "video_views":    ("Custo/view",     lambda s: (s["spend"] / s["video_views"]) if s["video_views"] else 0.0),
     "clicks":         ("CPC",            lambda s: (s["spend"] / s["clicks"]) if s["clicks"] else 0.0),
     "engagement":     ("Custo/engajamento", lambda s: (s["spend"] / s["engagement"]) if s.get("engagement") else 0.0),
+    "registrations":  ("Custo/inscrição", lambda s: (s["spend"] / s["registrations"]) if s.get("registrations") else 0.0),
     "profile_visits": ("Custo/visita",   lambda s: (s["spend"] / s["profile_visits"]) if s["profile_visits"] else 0.0),
     "conversions":    ("CPA",            lambda s: (s["spend"] / s["conversions"]) if s["conversions"] else 0.0),
     "leads":          ("CPL",            lambda s: (s["spend"] / s["leads"]) if s["leads"] else 0.0),
@@ -91,6 +93,7 @@ _ETAPA_OBJETIVO = {
     "leads": {"leads", "vendas"},
     "profile_visits": {"visitas_instagram", "trafego", "engajamento"},
     "add_to_cart": {"vendas"},
+    "registrations": {"vendas", "leads"},
     "initiate_checkout": {"vendas"},
     "purchases": {"vendas"},
 }

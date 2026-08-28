@@ -40,7 +40,7 @@ META_COLUMNS = [
     "site_visits", "video_views", "engagement",
     # E-commerce (Meta/TikTok): etapas antes da compra. Zero para quem nao tem pixel
     # de loja — a regra de ocultar zerados cuida de nao poluir o dashboard.
-    "add_to_cart", "initiate_checkout",
+    "add_to_cart", "initiate_checkout", "registrations",
 ]
 GOOGLE_COLUMNS = [
     "date", "account", "account_id", "objective", "campaign", "campaign_type",
@@ -55,7 +55,7 @@ NUMERIC_META = [
     "daily_budget", "impressions", "reach", "frequency", "clicks", "link_clicks", "spend",
     "messaging_conversations", "profile_visits", "leads", "form_leads", "purchases",
     "purchase_value", "site_visits", "video_views", "engagement",
-    "add_to_cart", "initiate_checkout",
+    "add_to_cart", "initiate_checkout", "registrations",
 ]
 NUMERIC_GOOGLE = [
     "daily_budget", "impressions", "clicks", "cost", "conversions", "conversion_value",

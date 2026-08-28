@@ -57,6 +57,8 @@ KPI_CATALOG = {
     "cost_per_site":  {"label": "Custo/visita site",     "fmt": "currency", "dir": "down",    "base": "site_visits",  "calc": lambda s: _safe(s["spend"], s["site_visits"])},
     "video_views":    {"label": "Visualizações de vídeo","fmt": "int",      "dir": "up",      "base": "video_views",  "calc": lambda s: s["video_views"]},
     "cost_per_engagement": {"label": "Custo por engajamento", "fmt": "currency", "dir": "down", "base": "engagement",   "calc": lambda s: _safe(s["spend"], s["engagement"])},
+    "registrations":  {"label": "Inscrições", "fmt": "int", "dir": "up", "base": "registrations", "calc": lambda s: s["registrations"]},
+    "cost_per_registration": {"label": "Custo por inscrição", "fmt": "currency", "dir": "down", "base": "registrations", "calc": lambda s: _safe(s["spend"], s["registrations"])},
     "cpv":            {"label": "Custo por view",        "fmt": "currency", "dir": "down",    "base": "video_views",  "calc": lambda s: _safe(s["spend"], s["video_views"])},
     "view_rate":      {"label": "Taxa de visualização",  "fmt": "pct",      "dir": "up",      "base": "video_views",  "calc": lambda s: _safe(s["video_views"], s["impressions"])},
     "engagement":     {"label": "Engajamentos",          "fmt": "int",      "dir": "up",      "base": "engagement",   "calc": lambda s: s["engagement"]},
@@ -73,7 +75,7 @@ OBJECTIVE_CONFIG = {
         "label": "Vendas / Conversões", "icone": "shopping-cart", "conv_label": "Conversões",
         "kpis": ["spend", "revenue", "roas", "purchases", "cost_per_purchase",
                  "conversions", "cpa", "conv_rate",
-                 "add_to_cart", "cost_per_cart", "cart_rate",
+                 "add_to_cart", "cost_per_cart", "cart_rate", "registrations", "cost_per_registration",
                  "checkouts", "cost_per_checkout", "checkout_rate", "purchase_rate",
                  "clicks", "ctr", "cpc", "impressions", "cpm", "site_visits"],
         "primary": "roas", "best_ad_metric": "roas", "conv_key": "conversions",
@@ -154,7 +156,7 @@ def objective_config(obj: str) -> dict:
 _META_NUM = ["impressions", "reach", "clicks", "link_clicks", "spend",
              "messaging_conversations", "profile_visits", "leads",
              "purchases", "purchase_value", "site_visits", "video_views",
-             "engagement", "add_to_cart", "initiate_checkout"]
+             "engagement", "add_to_cart", "initiate_checkout", "registrations"]
 _GOOGLE_NUM = ["impressions", "clicks", "cost", "conversions", "conversion_value",
                "video_views", "interactions"]
 
@@ -186,6 +188,7 @@ def _sums(meta: pd.DataFrame, google: pd.DataFrame, tiktok: pd.DataFrame = None)
         # que mistura as conversoes do Google — num funil de loja isso importa.
         "purchases": m["purchases"] + t["purchases"],
         "add_to_cart": m["add_to_cart"] + t["add_to_cart"],
+        "registrations": m["registrations"] + t["registrations"],
         "initiate_checkout": m["initiate_checkout"] + t["initiate_checkout"],
         "revenue": m["purchase_value"] + g["conversion_value"] + t["purchase_value"],
     }

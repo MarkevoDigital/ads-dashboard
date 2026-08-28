@@ -113,7 +113,7 @@ _METRICS = [
 # (add_to_cart, on_web_cart, onsite_add_to_cart, cart, total_add_to_cart, web_cart...)
 # e todas voltam "invalid metric". O TikTok expoe checkout e pagamento, mas nao o
 # carrinho -- essa etapa do funil fica so com o Meta ate a API oferecer.
-_METRICS_ECOM = ["initiate_checkout", "complete_payment"]
+_METRICS_ECOM = ["initiate_checkout", "complete_payment", "registration"]
 
 
 def _num(v) -> float:
@@ -348,6 +348,7 @@ def _fetch_advertiser_rows(advertiser_id, adv_name, token, version, since, until
             # so o que e real) em vez de inventar um proxy.
             "add_to_cart": 0.0,
             "initiate_checkout": _num(met.get("initiate_checkout")),
+            "registrations": _num(met.get("registration")),
             "purchase_value": _num(met.get("total_purchase_value")),
             "site_visits": 0.0,
             "video_views": _num(met.get("video_play_actions")),

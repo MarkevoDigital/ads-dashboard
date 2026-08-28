@@ -165,6 +165,13 @@ ACTION_KEYS = {
                           "offsite_conversion.fb_pixel_initiate_checkout",
                           "initiate_checkout"],
     "leads": ["onsite_conversion.lead_grouped", "offsite_conversion.fb_pixel_lead", "lead"],
+    # Inscricao/cadastro, incluindo teste gratis. Ordem = prioridade; omni_* consolida
+    # web + app. Cobre CompleteRegistration, StartTrial e Subscribe porque cada conta
+    # instrumenta o mesmo evento de um jeito.
+    "registrations": ["omni_complete_registration",
+                      "offsite_conversion.fb_pixel_complete_registration",
+                      "complete_registration", "onsite_conversion.complete_registration",
+                      "omni_start_trial", "start_trial", "subscribe"],
     "messaging_conversations": [
         "onsite_conversion.messaging_conversation_started_7d",
         "messaging_conversation_started_7d",
@@ -518,6 +525,7 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
         purchases = _first_action(actions, ACTION_KEYS["purchases"])
         add_to_cart = _first_action(actions, ACTION_KEYS["add_to_cart"])
         initiate_checkout = _first_action(actions, ACTION_KEYS["initiate_checkout"])
+        registrations = _first_action(actions, ACTION_KEYS["registrations"])
         leads = _first_action(actions, ACTION_KEYS["leads"])
         revenue = _first_action(action_values, ACTION_KEYS["purchases"])
         site_visits = _first_action(actions, ACTION_KEYS["site_visits"])
@@ -565,6 +573,7 @@ def _fetch_account_rows(account_id, token, version, since, until, obj_map) -> li
             "profile_visits": visits, "leads": leads, "form_leads": form_leads,
             "purchases": purchases,
             "add_to_cart": add_to_cart, "initiate_checkout": initiate_checkout,
+            "registrations": registrations,
             "purchase_value": revenue, "site_visits": site_visits,
             "video_views": video_views, "engagement": engagement,
         })

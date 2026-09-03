@@ -626,6 +626,42 @@ def fetch_geo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def fetch_demo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
+    """Impressoes/cliques/investimento por GENERO e FAIXA ETARIA (breakdowns=age,gender),
+    por conta e por dia, p/ a secao de publico. Cada linha da Meta (idade x genero) vira
+    duas linhas aqui (dimension='genero' e 'idade') -- assim a agregacao por dimensao
+    e um groupby simples e o schema fica igual ao do Google/TikTok."""
+    from connectors.demo_norm import norm_age, norm_gender
+    token = meta_cfg.get("access_token")
+    if not token:
+        return pd.DataFrame()
+    _ensure_dns()
+    version = meta_cfg.get("api_version", "v21.0")
+    until = today_br()
+    since = until - timedelta(days=days - 1)
+    rows = []
+    for account_id in _account_ids(meta_cfg, token, version):
+        url = f"{GRAPH}/{version}/{account_id}/insights"
+        params = {
+            "level": "account", "breakdowns": "age,gender", "time_increment": 1,
+            "fields": "impressions,clicks,spend", "limit": 500, "access_token": token,
+        }
+        try:
+            for r in _insights_windowed(url, params, since, until):
+                base = {
+                    "date": r.get("date_start"), "account_id": account_id.replace("act_", ""),
+                    "platform": "meta",
+                    "impressions": float(r.get("impressions", 0) or 0),
+                    "clicks": float(r.get("clicks", 0) or 0),
+                    "spend": float(r.get("spend", 0) or 0),
+                }
+                rows.append({**base, "dimension": "genero", "bucket": norm_gender(r.get("gender"))})
+                rows.append({**base, "dimension": "idade", "bucket": norm_age(r.get("age"))})
+        except Exception as exc:  # noqa: BLE001
+            print(f"[meta-publico] {account_id}: {_safe(exc)}")
+    return pd.DataFrame(rows)
+
+
 def currencies(meta_cfg: dict) -> dict:
     """{account_id (so digitos): codigo ISO da moeda} das contas acessiveis.
 

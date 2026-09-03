@@ -97,6 +97,9 @@ EN = {
     "Views": "Views",
     # --- Funil (analytics) ---
     "Novos seguidores (conta)": "New followers (account)",
+    "Feminino": "Female",
+    "Masculino": "Male",
+    "Desconhecido": "Unknown",
     "Custo/view": "Cost/view",
     "Custo/visita": "Cost/visit",
     "CPL": "CPL",

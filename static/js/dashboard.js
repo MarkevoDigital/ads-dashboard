@@ -5,6 +5,7 @@
   const $ = (id) => document.getElementById(id);
   let trendChart = null, platformChart = null, clientLoaded = false, accountsSig = null;
   let geoMap = null, geoMarkers = null, monthsLoaded = false;
+  let genderChart = null, ageChart = null;
   const MESES =["janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
@@ -69,6 +70,13 @@
     "⚖️ Meta x Google": "⚖️ Meta vs. Google",
     "🔁 Período atual vs. anterior": "🔁 Current vs. previous period",
     "📍 Mapa de calor — cliques por estado": "📍 Heat map — clicks by state",
+    "👥 Público — gênero e faixa etária": "👥 Audience — gender and age",
+    "Impressões, cliques e investimento por gênero e faixa etária, somando as plataformas do período.": "Impressions, clicks and spend by gender and age range, across the platforms in the period.",
+    "Gênero": "Gender",
+    "Faixa etária": "Age range",
+    "cliques": "clicks",
+    "Sem dados de gênero no período.": "No gender data for the period.",
+    "Sem dados de faixa etária no período.": "No age data for the period.",
     "Carregando…": "Loading…",
     "Atualização automática diária · Meta Ads + Google Ads": "Updated automatically every day · Meta Ads + Google Ads",
     "Sem dados no período selecionado.": "No data for the selected period.",
@@ -287,6 +295,7 @@
       $("keywords-section").classList.add("hidden");
       $("kw-platform-row").classList.add("one-col");
       $("geo-section").classList.add("hidden");
+      $("demo-section").classList.add("hidden");
       $("tiktok-section").classList.add("hidden");
       // Instagram é orgânico: aparece mesmo sem veiculação de anúncios no período.
       renderInstagram(data);
@@ -336,6 +345,55 @@
     // tabela abaixo do mapa (oculta para clientes sem dados de cidade / sem Google).
     renderGeo(data.geo);
     renderGeoCities(data.geo_cidades);
+    renderDemo(data.demografia);
+  }
+
+  // ---- Público: gênero e faixa etária (segue período, plataforma e escopo do login) ----
+  const DEMO_COLORS = { feminino: "#ff6b9d", masculino: "#5b8cff", desconhecido: "#93a0b8" };
+  const AGE_COLORS = ["#7fd8a8", "#2ecc8f", "#22b07a", "#1a8f63", "#5b8cff", "#3f6fe0", "#2d54b8", "#93a0b8"];
+  function demoTable(items) {
+    const body = items.map((r) => `<tr><td>${r.label}</td><td>${fmt(r.impressions, "int")}</td>
+      <td>${fmt(r.clicks, "int")}</td><td>${fmt(r.share, "pct")}</td><td>${fmt(r.ctr, "pct")}</td>
+      <td>${fmt(r.spend, "currency")}</td><td>${fmt(r.cpc, "currency")}</td></tr>`).join("");
+    return `<table><thead><tr><th></th><th>${T("Impressões")}</th><th>${T("Cliques")}</th>
+      <th>% ${T("cliques")}</th><th>CTR</th><th>${T("Investimento")}</th><th>CPC</th></tr></thead>
+      <tbody>${body}</tbody></table>`;
+  }
+  function renderDemo(demo) {
+    const sec = $("demo-section");
+    if (!sec) return;
+    const gen = (demo && demo.genero) || [], age = (demo && demo.idade) || [];
+    // Some inteira quando nao ha dado (cliente sem breakdown demografico) — mesma
+    // regra data-driven das outras secoes.
+    if (!gen.length && !age.length) { sec.classList.add("hidden"); return; }
+    sec.classList.remove("hidden");
+    if (genderChart) { genderChart.destroy(); genderChart = null; }
+    if (ageChart) { ageChart.destroy(); ageChart = null; }
+    $("gender-table").innerHTML = gen.length ? demoTable(gen)
+      : `<div class="empty">${T("Sem dados de gênero no período.")}</div>`;
+    $("age-table").innerHTML = age.length ? demoTable(age)
+      : `<div class="empty">${T("Sem dados de faixa etária no período.")}</div>`;
+    if (gen.length) {
+      genderChart = new Chart($("gender-chart"), {
+        type: "doughnut",
+        data: { labels: gen.map((r) => r.label),
+          datasets: [{ data: gen.map((r) => r.clicks),
+            backgroundColor: gen.map((r) => DEMO_COLORS[r.key] || "#93a0b8"), borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: "right", labels: { color: "#e6eaf2" } },
+            tooltip: { callbacks: { label: (c) =>
+              ` ${c.label}: ${fmt(c.parsed, "int")} ${T("cliques")} (${fmt(gen[c.dataIndex].share, "pct")})` } } } },
+      });
+    }
+    if (age.length) {
+      ageChart = new Chart($("age-chart"), {
+        type: "bar",
+        data: { labels: age.map((r) => r.label),
+          datasets: [{ label: T("Cliques"), data: age.map((r) => r.clicks),
+            backgroundColor: age.map((_, i) => AGE_COLORS[i % AGE_COLORS.length]) }] },
+        options: baseOpts({ stacked: false }),
+      });
+    }
   }
 
   // ---- Seletor de meses (gera os últimos 6 meses a partir da data final dos dados) ----
@@ -924,6 +982,8 @@
     try { if (trendChart) trendChart.resize(); } catch (e) {}
     try { if (platformChart) platformChart.resize(); } catch (e) {}
     try { if (igChart) igChart.resize(); } catch (e) {}
+    try { if (genderChart) genderChart.resize(); } catch (e) {}
+    try { if (ageChart) ageChart.resize(); } catch (e) {}
     try { if (geoMap) geoMap.invalidateSize(); } catch (e) {}
   };
   window.addEventListener("beforeprint", resizeCharts);

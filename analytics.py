@@ -660,6 +660,63 @@ def _geo(geo_df, scope, start, end, level="estado", platform=None) -> dict:
 
 
 # ----------------------------------------------------------------------------
+# Publico (genero e faixa etaria)
+# ----------------------------------------------------------------------------
+_GENERO_ORDEM = ["feminino", "masculino", "desconhecido"]
+_DEMO_LABELS = {"feminino": "Feminino", "masculino": "Masculino", "desconhecido": "Desconhecido"}
+
+
+def _idade_sort(bucket):
+    # '13-17' -> 13, '65+' -> 65; 'desconhecido' vai para o fim.
+    d = "".join(ch for ch in str(bucket) if ch.isdigit())
+    return (0, int(d[:2])) if d else (1, 0)
+
+
+def _demographics(demo_df, scope, start, end, platform="todas") -> dict:
+    """Impressoes/cliques/investimento por genero e por faixa etaria no periodo,
+    somando as plataformas (ou so a filtrada). Vazio -> a secao some no front."""
+    empty = {"genero": [], "idade": []}
+    if demo_df is None or demo_df.empty:
+        return empty
+    df = demo_df
+    if platform in ("meta", "google", "tiktok") and "platform" in df.columns:
+        df = df[df["platform"] == platform]
+    if scope is not None:
+        allowed = ((scope.get("meta_ids") or set()) | (scope.get("google_ids") or set())
+                   | (scope.get("tiktok_ids") or set()))
+        df = df[df["account_id"].astype(str).map(_digits).isin(allowed)]
+    df = _window(df, start, end)
+    if df is None or df.empty:
+        return empty
+    out = {}
+    for dim in ("genero", "idade"):
+        g = df[df["dimension"] == dim].groupby("bucket")[["impressions", "clicks", "spend"]].sum()
+        g = g[g["impressions"] > 0]
+        if g.empty:
+            out[dim] = []
+            continue
+        buckets = list(g.index)
+        if dim == "genero":
+            buckets.sort(key=lambda b: _GENERO_ORDEM.index(b) if b in _GENERO_ORDEM else 9)
+        else:
+            buckets.sort(key=_idade_sort)
+        tot_clicks = float(g["clicks"].sum())
+        items = []
+        for b in buckets:
+            r = g.loc[b]
+            imp, clk, sp = float(r["impressions"]), float(r["clicks"]), float(r["spend"])
+            items.append({
+                "key": b, "label": _DEMO_LABELS.get(b, b),
+                "impressions": round(imp), "clicks": round(clk), "spend": round(sp, 2),
+                "ctr": round(clk / imp, 4) if imp else 0.0,
+                "cpc": round(sp / clk, 2) if clk else 0.0,
+                "share": round(clk / tot_clicks, 4) if tot_clicks else 0.0,
+            })
+        out[dim] = items
+    return out
+
+
+# ----------------------------------------------------------------------------
 # Comparativos
 # ----------------------------------------------------------------------------
 def _platform_comparison(meta_cur, google_cur, tiktok_cur=None) -> dict:
@@ -936,6 +993,7 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         "anuncios": _ads(meta_cur, tiktok_cur),
         "geo": _geo(store.geo, scope, start, end, "estado"),
         "geo_cidades": _geo(store.geo, scope, start, end, "cidade"),
+        "demografia": _demographics(getattr(store, "demo", None), scope, start, end, platform),
         "comparativo_plataforma": _platform_comparison(meta_cur, google_cur, tiktok_cur),
         "comparativo_periodo": _period_comparison(meta_cur, google_cur, meta_prev, google_prev,
                                                   history, tiktok_cur, tiktok_prev),

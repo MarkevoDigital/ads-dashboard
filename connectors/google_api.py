@@ -503,6 +503,56 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def fetch_demo(g_cfg: dict, days: int = 60) -> pd.DataFrame:
+    """Impressoes/cliques/custo por GENERO (gender_view) e FAIXA ETARIA (age_range_view),
+    por conta e por dia. As views sao por criterio de grupo de anuncios: somamos por
+    (dia, faixa) aqui. Campanhas sem criterio demografico (PMax, parte da Display) nao
+    aparecem nelas -- e limite da API, nao erro."""
+    from connectors.demo_norm import norm_age, norm_gender
+    if not g_cfg.get("developer_token") or not g_cfg.get("refresh_token"):
+        return pd.DataFrame()
+    from google.ads.googleads.errors import GoogleAdsException
+
+    client = _client(g_cfg)
+    service = client.get_service("GoogleAdsService")
+    since, until = _date_range(days)
+    rows = []
+    # (dimensao, view, campo do criterio, extrator do valor, normalizador)
+    dims = (
+        ("genero", "gender_view", "ad_group_criterion.gender.type",
+         lambda row: row.ad_group_criterion.gender.type_.name, norm_gender),
+        ("idade", "age_range_view", "ad_group_criterion.age_range.type",
+         lambda row: row.ad_group_criterion.age_range.type_.name, norm_age),
+    )
+    for cid in _customer_ids(g_cfg, client):
+        for dim, view, field, getter, norm in dims:
+            query = f"""
+                SELECT {field}, segments.date, metrics.impressions, metrics.clicks,
+                       metrics.cost_micros
+                FROM {view}
+                WHERE segments.date BETWEEN '{since}' AND '{until}'
+            """
+            agg = {}
+            try:
+                for batch in service.search_stream(customer_id=cid, query=query):
+                    for row in batch.results:
+                        k = (str(row.segments.date), norm(getter(row)))
+                        a = agg.setdefault(k, [0.0, 0.0, 0.0])
+                        a[0] += float(row.metrics.impressions)
+                        a[1] += float(row.metrics.clicks)
+                        a[2] += float(row.metrics.cost_micros) / 1e6
+            except GoogleAdsException as exc:
+                print(f"[google-publico] {cid} {dim}: {exc}")
+                continue
+            for (date, bucket), (imp, clk, cost) in agg.items():
+                if imp <= 0:
+                    continue
+                rows.append({"date": date, "account_id": cid, "platform": "google",
+                             "dimension": dim, "bucket": bucket,
+                             "impressions": imp, "clicks": clk, "spend": cost})
+    return pd.DataFrame(rows)
+
+
 def currencies(g_cfg: dict) -> dict:
     """{customer_id: codigo ISO da moeda} das contas do MCC.
 

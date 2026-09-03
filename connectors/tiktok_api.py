@@ -410,6 +410,58 @@ def fetch_geo(tiktok_cfg: dict, days: int = 60) -> pd.DataFrame:
                                  "lat", "lng", "clicks"])
 
 
+def fetch_demo(tiktok_cfg: dict, days: int = 60) -> pd.DataFrame:
+    """Impressoes/cliques/investimento por GENERO e FAIXA ETARIA (report AUDIENCE, nivel
+    advertiser, por dia). Best-effort: qualquer recusa da API so registra no log."""
+    from connectors.demo_norm import norm_age, norm_gender
+    token = tiktok_cfg.get("access_token")
+    if not token:
+        return pd.DataFrame()
+    _ensure_dns()
+    version = tiktok_cfg.get("api_version", "v1.3")
+    until = today_br()
+    since = until - timedelta(days=days - 1)
+    rows = []
+    for adv in _advertiser_ids(tiktok_cfg, token, version):
+        for dim, key, norm in (("genero", "gender", norm_gender), ("idade", "age", norm_age)):
+            win_start = since
+            try:
+                while win_start <= until:
+                    win_end = min(win_start + timedelta(days=29), until)
+                    page = 1
+                    while True:
+                        params = {
+                            "advertiser_id": adv,
+                            "report_type": "AUDIENCE",
+                            "data_level": "AUCTION_ADVERTISER",
+                            "dimensions": json.dumps(["advertiser_id", "stat_time_day", key]),
+                            "metrics": json.dumps(["impressions", "clicks", "spend"]),
+                            "start_date": str(win_start), "end_date": str(win_end),
+                            "page": page, "page_size": 1000,
+                        }
+                        data = _get("report/integrated/get", params, token, version)
+                        for item in data.get("list", []) or []:
+                            d = item.get("dimensions", {}) or {}
+                            m = item.get("metrics", {}) or {}
+                            imp = _num(m.get("impressions"))
+                            if imp <= 0:
+                                continue
+                            rows.append({
+                                "date": str(d.get("stat_time_day", ""))[:10], "account_id": adv,
+                                "platform": "tiktok", "dimension": dim, "bucket": norm(d.get(key)),
+                                "impressions": imp, "clicks": _num(m.get("clicks")),
+                                "spend": _num(m.get("spend")),
+                            })
+                        pi = data.get("page_info", {}) or {}
+                        if page >= int(pi.get("total_page", 1) or 1):
+                            break
+                        page += 1
+                    win_start = win_end + timedelta(days=1)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[tiktok-publico] {adv} {dim}: {exc}")
+    return pd.DataFrame(rows)
+
+
 def currencies(tiktok_cfg: dict) -> dict:
     """{advertiser_id: codigo ISO da moeda}. Best-effort (falha devolve {})."""
     token = tiktok_cfg.get("access_token")

@@ -341,10 +341,10 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
 
 
 def fetch_geo(g_cfg: dict, days: int = 60) -> pd.DataFrame:
-    """Cliques por estado (regiao) no Google Ads, com coordenadas p/ o mapa de calor.
+    """Cliques por estado no Google Ads, com coordenadas p/ o mapa de calor.
 
-    A API nao devolve coordenadas: consultamos geographic_view por geo_target_region,
-    resolvemos o id da regiao -> nome via geo_target_constant, e mapeamos o nome do
+    A API nao devolve coordenadas: consultamos user_location_view por geo_target_state,
+    resolvemos o id do estado -> nome via geo_target_constant, e mapeamos o nome do
     estado para os centroides BR_STATE_COORDS (mesmos do Meta -> mapa consistente).
     """
     if not g_cfg.get("developer_token") or not g_cfg.get("refresh_token"):
@@ -356,10 +356,14 @@ def fetch_geo(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     since, until = _date_range(days)
     rows = []
 
+    # user_location_view = local FISICO do usuario, por estado e por dia. A fonte
+    # anterior (geographic_view, so LOCATION_OF_PRESENCE) descartava os cliques que o
+    # Google atribui por "area de interesse" -- na geographic_view cada clique cai em UM
+    # dos dois tipos, entao o mapa ficava com uma fracao do total (NEP: 217 de 737) e
+    # nao batia com a tabela de cidades, que ja vinha da user_location_view.
     geo_query = f"""
-        SELECT segments.geo_target_region, segments.date,
-               geographic_view.location_type, metrics.clicks
-        FROM geographic_view
+        SELECT segments.geo_target_state, segments.date, metrics.clicks
+        FROM user_location_view
         WHERE segments.date BETWEEN '{since}' AND '{until}'
     """
 
@@ -372,10 +376,7 @@ def fetch_geo(g_cfg: dict, days: int = 60) -> pd.DataFrame:
         try:
             for batch in service.search_stream(customer_id=cid, query=geo_query):
                 for row in batch.results:
-                    # cliques por presenca fisica (evita dupla contagem com area de interesse)
-                    if row.geographic_view.location_type.name != "LOCATION_OF_PRESENCE":
-                        continue
-                    rid = _rid(row.segments.geo_target_region)
+                    rid = _rid(row.segments.geo_target_state)
                     if not rid:
                         continue
                     region_ids.add(rid)

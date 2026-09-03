@@ -146,6 +146,7 @@ tbody tr:hover { background: var(--panel-2); }
 .chart-wrap { position: relative; height: 300px; }
 .chart-wrap.small { height: 220px; }
 .demo-title { font-size: 13px; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+.demo-note { margin: -2px 0 8px; font-size: 11px; }
 
 /* Misc */
 .loading {

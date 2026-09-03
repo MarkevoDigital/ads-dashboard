@@ -361,7 +361,11 @@ def _thumbnails(account_id, token, version) -> dict:
     limites de pagina decrescentes (50->25->10->5) ate a Meta aceitar, coletando
     pagina a pagina e mantendo o que ja veio."""
     base_url = f"{GRAPH}/{version}/{account_id}/ads"
-    fields = "id,preview_shareable_link,creative{thumbnail_url,image_url}"
+    # thumbnail_width/height: sem eles a Meta devolve o thumbnail em 64x64, que
+    # esticado no card de 220px vira um borrao (parecia "print quebrado"). 600px
+    # cobre o card em telas retina; a URL continua assinada e expira igual.
+    fields = ("id,preview_shareable_link,"
+              "creative.thumbnail_width(600).thumbnail_height(600){thumbnail_url,image_url}")
     mapa = {}
     for lim in (50, 25, 10, 5):
         mapa = {}

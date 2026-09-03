@@ -202,10 +202,20 @@ BR_STATE_COORDS = {
 }
 
 
+# Nomes que a Meta devolve em ingles no breakdown por regiao.
+_STATE_ALIASES = {"federal district": "distrito federal"}
+
+
 def _norm_state(s: str) -> str:
-    """Normaliza nome de estado/cidade (sem acento, minusculo) para casar na busca."""
+    """Normaliza nome de estado/cidade (sem acento, minusculo) para casar na busca.
+
+    A Meta devolve a regiao como "Sao Paulo (state)", "Federal District" etc.: sem
+    tirar o sufixo entre parenteses e traduzir os aliases, a maioria dos estados nao
+    casava e o mapa somava so uma fracao dos cliques (Fernando: 597 de 1.708)."""
     s = unicodedata.normalize("NFKD", str(s))
-    return "".join(c for c in s if not unicodedata.combining(c)).strip().lower()
+    s = "".join(c for c in s if not unicodedata.combining(c)).strip().lower()
+    s = re.sub(r"\s*\([^)]*\)\s*$", "", s).strip()
+    return _STATE_ALIASES.get(s, s)
 
 
 # lookup: nome normalizado -> (nome acentuado p/ exibicao, lat, lng)

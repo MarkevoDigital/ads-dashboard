@@ -71,7 +71,7 @@
     "🔁 Período atual vs. anterior": "🔁 Current vs. previous period",
     "📍 Mapa de calor — cliques por estado": "📍 Heat map — clicks by state",
     "👥 Público — gênero e faixa etária": "👥 Audience — gender and age",
-    "Impressões, cliques e investimento por gênero e faixa etária, somando as plataformas do período.": "Impressions, clicks and spend by gender and age range, across the platforms in the period.",
+    "Impressões, cliques e investimento por gênero e faixa etária, somando as plataformas do período. No Google entram só campanhas com segmentação demográfica (Pesquisa/Display); Performance Max não informa.": "Impressions, clicks and spend by gender and age range, across the platforms in the period. Google includes only campaigns with demographic targeting (Search/Display); Performance Max does not report it.",
     "Gênero": "Gender",
     "Faixa etária": "Age range",
     "cliques": "clicks",

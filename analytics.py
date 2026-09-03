@@ -160,7 +160,10 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0, ordem=None) -> 
         val = round(s.get(key, 0))
         if filtrar and key in _ETAPA_OBJETIVO and not (_ETAPA_OBJETIVO[key] & objetivos):
             continue
-        if val > 0 or key == "clicks":
+        # Cliques entra mesmo zerado (ancora do funil), mas so quando houve veiculacao:
+        # cliente sem anuncio no periodo e so com Instagram mostrava "Cliques 0 / CPC
+        # R$ 0,00" antes dos seguidores.
+        if val > 0 or (key == "clicks" and impr > 0):
             seq.append((key, _FUNNEL_LABELS[key], val))
 
     stages = []

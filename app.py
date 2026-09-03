@@ -274,10 +274,29 @@ def _start_scheduler():
 # ----------------------------------------------------------------------------
 # Rotas
 # ----------------------------------------------------------------------------
+def _asset_version() -> str:
+    """Versao dos assets (css/js) para o cache-busting do navegador. Vem do mtime
+    dos arquivos: todo deploy (git pull) gera uma versao nova sozinho. Antes era um
+    numero fixo no template, e quando alguem esquecia de subir o numero o cliente
+    ficava com o dashboard.js antigo do cache contra um payload novo — secoes
+    sumindo/quebrando so em alguns navegadores."""
+    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    mt = 0
+    for rel in ("js/dashboard.js", "css/style.css"):
+        try:
+            mt = max(mt, int(os.path.getmtime(os.path.join(base, rel))))
+        except OSError:
+            pass
+    return str(mt or 1)
+
+
+ASSET_V = _asset_version()
+
+
 @app.route("/")
 @requires_auth
 def index():
-    return render_template("dashboard.html")
+    return render_template("dashboard.html", asset_v=ASSET_V)
 
 
 @app.route("/logout")

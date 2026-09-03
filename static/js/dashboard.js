@@ -818,6 +818,9 @@
       L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
         { maxZoom: 18, crossOrigin: true, attribution: "© OpenStreetMap · © CARTO" }).addTo(geoMap);
     }
+    // A seção acabou de sair de "hidden": sem isto o Leaflet mede o container com 0px
+    // e o enquadramento abaixo sai errado.
+    geoMap.invalidateSize();
     if (geoMarkers) geoMap.removeLayer(geoMarkers);
     const mx = geo.max || 1;
     geoMarkers = L.layerGroup();
@@ -832,8 +835,18 @@
       }).bindTooltip(fmt(p[2], "int") + " cliques", { direction: "top" }).addTo(geoMarkers);
     });
     geoMarkers.addTo(geoMap);
-    try { geoMap.fitBounds(L.latLngBounds(pts.map((p) => [p[0], p[1]])).pad(0.3)); } catch (e) {}
-    setTimeout(() => geoMap.invalidateSize(), 250);
+    // Enquadra os estados com veiculação. maxZoom é obrigatório: com um estado só
+    // (ou dois vizinhos) o fitBounds ia ao zoom 18 (nível de rua) e o mapa virava um
+    // tile cinza com uma bolha gigante — era o "mapa quebrado" dos clientes regionais.
+    const fit = () => {
+      try {
+        geoMap.invalidateSize();
+        geoMap.fitBounds(L.latLngBounds(pts.map((p) => [p[0], p[1]])).pad(0.3),
+          { maxZoom: 6, padding: [16, 16] });
+      } catch (e) {}
+    };
+    fit();
+    setTimeout(fit, 250);
     $("geo-top").innerHTML = estados.map((c) =>
       `<span class="geo-chip">${c.city}: <b>${fmt(c.clicks, "int")}</b></span>`).join("");
   }

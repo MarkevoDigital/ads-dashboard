@@ -425,17 +425,19 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     since, until = _date_range(days)
     rows = []
     # user_location_view = cidade REAL do usuario (geographic_view quase nao popula cidade).
-    # AGREGA o periodo (sem segments.date) -> 1 linha por cidade/conta (rapido); seria
-    # inviavel por dia (cidades x dias x contas = dezenas de milhares de linhas).
-    # ORDER BY + LIMIT: so as cidades com mais cliques (o que importa p/ mapa/ranking).
-    # Limita o volume por conta -> refresh rapido e estavel (sem isso, milhares de linhas).
-    geo_query = f"""
+    # Duas etapas por conta: (1) as 40 cidades com mais cliques no periodo inteiro de
+    # busca; (2) os cliques POR DIA so dessas cidades. Assim a tabela de cidades respeita
+    # o filtro de dias do dashboard (antes era um total agregado dos 60 dias, datado em
+    # 'until', que nao batia com o mapa em 7/14 dias) sem explodir o volume: no maximo
+    # 40 cidades x dias por conta. Se a consulta diaria falhar, cai no agregado antigo.
+    top_query = f"""
         SELECT segments.geo_target_city, metrics.clicks
         FROM user_location_view
         WHERE segments.date BETWEEN '{since}' AND '{until}'
         ORDER BY metrics.clicks DESC
         LIMIT 40
     """
+    until_s = until.isoformat() if hasattr(until, "isoformat") else str(until)
 
     def _rid(rn):
         return str(rn).rsplit("/", 1)[-1] if rn else ""
@@ -443,7 +445,7 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     for cid in _customer_ids(g_cfg, client):
         by_city = {}
         try:
-            for batch in service.search_stream(customer_id=cid, query=geo_query):
+            for batch in service.search_stream(customer_id=cid, query=top_query):
                 for row in batch.results:
                     rid = _rid(row.segments.geo_target_city)
                     if not rid:
@@ -454,6 +456,26 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
             continue
         if not by_city:
             continue
+        # (2) por dia, so das cidades do top: (data, rid) -> cliques
+        daily = {}
+        in_cities = ",".join(f"'geoTargetConstants/{r}'" for r in sorted(by_city))
+        daily_query = f"""
+            SELECT segments.geo_target_city, segments.date, metrics.clicks
+            FROM user_location_view
+            WHERE segments.date BETWEEN '{since}' AND '{until}'
+              AND segments.geo_target_city IN ({in_cities})
+        """
+        try:
+            for batch in service.search_stream(customer_id=cid, query=daily_query):
+                for row in batch.results:
+                    rid = _rid(row.segments.geo_target_city)
+                    if not rid:
+                        continue
+                    k = (str(row.segments.date), rid)
+                    daily[k] = daily.get(k, 0.0) + float(row.metrics.clicks)
+        except GoogleAdsException as exc:
+            print(f"[google-cidade] diario {cid}: {exc} -> usando agregado do periodo")
+            daily = {(until_s, rid): clk for rid, clk in by_city.items()}
         names = {}
         try:
             in_clause = ",".join(sorted(by_city))
@@ -467,7 +489,7 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                     names[str(row.geo_target_constant.id)] = row.geo_target_constant.name
         except GoogleAdsException as exc:
             print(f"[google-cidade] resolve {cid}: {exc}")
-        for rid, clk in by_city.items():
+        for (date, rid), clk in daily.items():
             cidade = names.get(rid, "")
             if not cidade or clk <= 0:
                 continue
@@ -475,8 +497,7 @@ def fetch_geo_city(g_cfg: dict, days: int = 60) -> pd.DataFrame:
             name = coord[0] if coord else cidade
             lat = coord[1] if coord else 0.0
             lng = coord[2] if coord else 0.0
-            rows.append({"date": until.isoformat() if hasattr(until, "isoformat") else until,
-                         "account_id": cid, "platform": "google", "level": "cidade",
+            rows.append({"date": date, "account_id": cid, "platform": "google", "level": "cidade",
                          "city": name, "lat": lat, "lng": lng, "clicks": clk})
     return pd.DataFrame(rows)
 

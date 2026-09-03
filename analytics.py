@@ -638,10 +638,12 @@ def _geo(geo_df, scope, start, end, level="estado", platform=None) -> dict:
         allowed = ((scope.get("meta_ids") or set()) | (scope.get("google_ids") or set())
                    | (scope.get("tiktok_ids") or set()))
         df = df[df["account_id"].astype(str).map(_digits).isin(allowed)]
-    # Estados respeitam o periodo; cidades sao um snapshot agregado do periodo de busca
-    # (datado em 'until') -> nao se filtra por janela p/ nao zerar fora do dia exato.
-    if level == "estado":
-        df = _window(df, start, end)
+    # Estados e cidades respeitam o periodo selecionado. (As cidades vinham como um
+    # agregado dos 60 dias datado em 'until' e ficavam fora da janela -- a tabela nao
+    # acompanhava o filtro de dias e nao batia com o mapa. Agora o coletor traz cidade
+    # por dia; o fallback do coletor, quando a consulta diaria falha, ainda chega datado
+    # em 'until' e entra em qualquer janela que inclua o ultimo dia.)
+    df = _window(df, start, end)
     if df is None or df.empty:
         return empty
     agg = df.groupby(["city", "lat", "lng"], dropna=False)["clicks"].sum().reset_index()

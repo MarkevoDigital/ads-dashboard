@@ -132,6 +132,26 @@ app = Flask(__name__)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 
+@app.after_request
+def _sem_cache_compartilhado(resp):
+    """Toda resposta e POR CLIENTE: nenhum cache compartilhado pode guarda-la.
+
+    Em 09/09/2026, depois da migracao dos dois deploys para nginx + Passenger, um
+    cache na frente do app passou a guardar /api/data indexado SO pela URL,
+    ignorando o header Authorization: quem logasse depois recebia o payload do
+    cliente anterior (NEP viu os dados do Kan; CarreiRHa viu os da Bem me Fiz).
+    'private, no-store' faz qualquer cache intermediario desistir de guardar, e
+    'Vary: Authorization' cobre os que respeitam Vary. /static fica de fora: e o
+    mesmo arquivo para todo mundo e ja tem versao no nome (?v=mtime)."""
+    if not request.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "private, no-store, no-cache, max-age=0, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        anterior = resp.headers.get("Vary")
+        resp.headers["Vary"] = f"{anterior}, Authorization" if anterior else "Authorization"
+    return resp
+
+
 CRON_TOKEN = config.get("cron", {}).get("token", "")
 AUTO_REFRESH_HORAS = float(config.get("atualizacao", {}).get("auto_refresh_horas", 12))
 

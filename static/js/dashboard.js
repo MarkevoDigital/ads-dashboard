@@ -223,7 +223,12 @@
       params.set("days", pv);
     }
     try {
-      const res = await fetch("/api/data?" + params.toString());
+      // Cache-buster obrigatorio: o nginx do servidor guarda respostas indexadas
+      // SO pela URL, ignorando o Authorization. Sem um valor unico por requisicao,
+      // um cliente pode receber o payload cacheado de outro (aconteceu em
+      // 09/09/2026). URL sempre distinta = nenhuma chave compartilhada entre logins.
+      params.set("_", `${Date.now()}${Math.random().toString(36).slice(2, 8)}`);
+      const res = await fetch("/api/data?" + params.toString(), { cache: "no-store" });
       render(await res.json());
     } catch (e) {
       console.error(e);

@@ -625,8 +625,10 @@ def _instagram(ig_df, scope, start, end) -> dict:
 # ----------------------------------------------------------------------------
 # Canais de veiculacao (Facebook/Instagram/WhatsApp, Pesquisa/PMax/YouTube...)
 # ----------------------------------------------------------------------------
+# O TikTok aparece por SISTEMA, nao por posicionamento: a API da v1.3 nao tem
+# dimensao de placement (ver connectors/tiktok_api.py).
 _CANAL_PLATAFORMA = {"meta": "Meta Ads", "google": "Google Ads",
-                     "tiktok": "TikTok Ads", "linkedin": "LinkedIn Ads"}
+                     "tiktok": "TikTok Ads — por sistema", "linkedin": "LinkedIn Ads"}
 
 
 def _canais(canais_df, scope, start, end, platform="todas") -> list:

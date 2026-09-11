@@ -462,6 +462,70 @@ def fetch_demo(tiktok_cfg: dict, days: int = 60) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+_CANAL_TIKTOK = {
+    "PLACEMENT_TIKTOK": "TikTok",
+    "PLACEMENT_PANGLE": "Pangle",
+    "PLACEMENT_GLOBAL_APP_BUNDLE": "Global App Bundle",
+    "PLACEMENT_TOPBUZZ": "TopBuzz",
+    "PLACEMENT_HELO": "Helo",
+}
+
+
+def fetch_canais(tiktok_cfg: dict, days: int = 60) -> pd.DataFrame:
+    """Impressoes/cliques/conversoes/investimento por POSICIONAMENTO do TikTok.
+
+    Best-effort: se a conta nao aceitar a dimensao 'placement' o relatorio inteiro
+    falha (erro 40002, mesma armadilha das metricas de e-commerce), entao o erro so
+    vai para o log e a plataforma fica de fora da secao."""
+    token = tiktok_cfg.get("access_token")
+    if not token:
+        return pd.DataFrame()
+    _ensure_dns()
+    version = tiktok_cfg.get("api_version", "v1.3")
+    until = today_br()
+    since = until - timedelta(days=days - 1)
+    rows = []
+    for adv in _advertiser_ids(tiktok_cfg, token, version):
+        win_start = since
+        try:
+            while win_start <= until:
+                win_end = min(win_start + timedelta(days=29), until)
+                page = 1
+                while True:
+                    params = {
+                        "advertiser_id": adv,
+                        "report_type": "BASIC",
+                        "data_level": "AUCTION_ADVERTISER",
+                        "dimensions": json.dumps(["advertiser_id", "stat_time_day", "placement"]),
+                        "metrics": json.dumps(["impressions", "clicks", "spend", "conversion"]),
+                        "start_date": str(win_start), "end_date": str(win_end),
+                        "page": page, "page_size": 1000,
+                    }
+                    data = _get("report/integrated/get", params, token, version)
+                    for item in data.get("list", []) or []:
+                        d = item.get("dimensions", {}) or {}
+                        m = item.get("metrics", {}) or {}
+                        imp = _num(m.get("impressions"))
+                        if imp <= 0:
+                            continue
+                        bruto = str(d.get("placement", "") or "")
+                        rows.append({
+                            "date": str(d.get("stat_time_day", ""))[:10],
+                            "account_id": adv, "platform": "tiktok",
+                            "canal": _CANAL_TIKTOK.get(bruto, bruto.replace("PLACEMENT_", "").title() or "TikTok"),
+                            "impressions": imp, "clicks": _num(m.get("clicks")),
+                            "conversions": _num(m.get("conversion")), "spend": _num(m.get("spend")),
+                        })
+                    pi = data.get("page_info", {}) or {}
+                    if page >= int(pi.get("total_page", 1) or 1):
+                        break
+                    page += 1
+                win_start = win_end + timedelta(days=1)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[tiktok-canais] {adv}: {exc}")
+    return pd.DataFrame(rows)
+
+
 def currencies(tiktok_cfg: dict) -> dict:
     """{advertiser_id: codigo ISO da moeda}. Best-effort (falha devolve {})."""
     token = tiktok_cfg.get("access_token")

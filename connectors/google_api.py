@@ -553,6 +553,64 @@ def fetch_demo(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# advertising_channel_type -> rotulo exibido.
+_CANAL_GOOGLE = {
+    "SEARCH": "Pesquisa",
+    "DISPLAY": "Display",
+    "SHOPPING": "Shopping",
+    "VIDEO": "YouTube",
+    "PERFORMANCE_MAX": "Performance Max",
+    "DEMAND_GEN": "Demand Gen",
+    "DISCOVERY": "Discovery",
+    "MULTI_CHANNEL": "App",
+    "LOCAL": "Local",
+    "LOCAL_SERVICES": "Local Services",
+    "SMART": "Smart",
+    "TRAVEL": "Travel",
+}
+
+
+def fetch_canais(g_cfg: dict, days: int = 60) -> pd.DataFrame:
+    """Impressoes/cliques/conversoes/custo por TIPO DE CAMPANHA (Pesquisa, PMax,
+    YouTube, Display...), por conta e por dia. Uma query por conta, agregando as
+    campanhas do mesmo tipo."""
+    if not g_cfg.get("developer_token") or not g_cfg.get("refresh_token"):
+        return pd.DataFrame()
+    from google.ads.googleads.errors import GoogleAdsException
+
+    client = _client(g_cfg)
+    service = client.get_service("GoogleAdsService")
+    since, until = _date_range(days)
+    query = f"""
+        SELECT campaign.advertising_channel_type, segments.date, metrics.impressions,
+               metrics.clicks, metrics.conversions, metrics.cost_micros
+        FROM campaign
+        WHERE segments.date BETWEEN '{since}' AND '{until}'
+    """
+    rows = []
+    for cid in _customer_ids(g_cfg, client):
+        agg = {}
+        try:
+            for batch in service.search_stream(customer_id=cid, query=query):
+                for row in batch.results:
+                    ch = row.campaign.advertising_channel_type.name
+                    k = (str(row.segments.date), _CANAL_GOOGLE.get(ch, ch.title()))
+                    a = agg.setdefault(k, [0.0, 0.0, 0.0, 0.0])
+                    a[0] += float(row.metrics.impressions)
+                    a[1] += float(row.metrics.clicks)
+                    a[2] += float(row.metrics.conversions)
+                    a[3] += float(row.metrics.cost_micros) / 1e6
+        except GoogleAdsException as exc:
+            print(f"[google-canais] {cid}: {exc}")
+            continue
+        for (date, canal), (imp, clk, conv, cost) in agg.items():
+            if imp <= 0 and clk <= 0:
+                continue
+            rows.append({"date": date, "account_id": cid, "platform": "google", "canal": canal,
+                         "impressions": imp, "clicks": clk, "conversions": conv, "spend": cost})
+    return pd.DataFrame(rows)
+
+
 def currencies(g_cfg: dict) -> dict:
     """{customer_id: codigo ISO da moeda} das contas do MCC.
 

@@ -662,6 +662,64 @@ def fetch_demo(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# publisher_platform da Meta -> rotulo exibido. O que nao estiver aqui entra com o
+# nome cru da API (melhor mostrar "audience_network" do que engolir a linha).
+_CANAL_META = {
+    "facebook": "Facebook",
+    "instagram": "Instagram",
+    "messenger": "Messenger",
+    "whatsapp": "WhatsApp",
+    "threads": "Threads",
+    "audience_network": "Audience Network",
+    "oculus": "Oculus",
+    "unknown": "Outros",
+}
+
+
+def fetch_canais(meta_cfg: dict, days: int = 60) -> pd.DataFrame:
+    """Impressoes/cliques/conversoes/investimento por PLATAFORMA de veiculacao.
+
+    breakdowns=publisher_platform separa Facebook, Instagram, WhatsApp, Threads,
+    Messenger e Audience Network. 'conversoes' aqui e a soma dos desfechos que o
+    dashboard ja reconhece (compras + leads + conversas + cadastros), porque a Meta
+    nao devolve um numero unico de 'resultado' por plataforma."""
+    token = meta_cfg.get("access_token")
+    if not token:
+        return pd.DataFrame()
+    _ensure_dns()
+    version = meta_cfg.get("api_version", "v21.0")
+    until = today_br()
+    since = until - timedelta(days=days - 1)
+    chaves = ("purchases", "leads", "messaging_conversations", "registrations")
+    rows = []
+    for account_id in _account_ids(meta_cfg, token, version):
+        url = f"{GRAPH}/{version}/{account_id}/insights"
+        params = {
+            "level": "account", "breakdowns": "publisher_platform", "time_increment": 1,
+            "fields": "impressions,clicks,spend,actions", "limit": 500, "access_token": token,
+        }
+        try:
+            for r in _insights_windowed(url, params, since, until):
+                bruto = str(r.get("publisher_platform", "") or "").lower()
+                actions = r.get("actions") or []
+                conv = 0.0
+                for chave in chaves:
+                    conv += float(_first_action(actions, ACTION_KEYS[chave]) or 0)
+                rows.append({
+                    "date": r.get("date_start"),
+                    "account_id": account_id.replace("act_", ""),
+                    "platform": "meta",
+                    "canal": _CANAL_META.get(bruto, bruto or "Outros"),
+                    "impressions": float(r.get("impressions", 0) or 0),
+                    "clicks": float(r.get("clicks", 0) or 0),
+                    "conversions": conv,
+                    "spend": float(r.get("spend", 0) or 0),
+                })
+        except Exception as exc:  # noqa: BLE001
+            print(f"[meta-canais] {account_id}: {_safe(exc)}")
+    return pd.DataFrame(rows)
+
+
 def currencies(meta_cfg: dict) -> dict:
     """{account_id (so digitos): codigo ISO da moeda} das contas acessiveis.
 

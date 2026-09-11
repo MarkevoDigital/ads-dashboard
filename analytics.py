@@ -623,6 +623,50 @@ def _instagram(ig_df, scope, start, end) -> dict:
 
 
 # ----------------------------------------------------------------------------
+# Canais de veiculacao (Facebook/Instagram/WhatsApp, Pesquisa/PMax/YouTube...)
+# ----------------------------------------------------------------------------
+_CANAL_PLATAFORMA = {"meta": "Meta Ads", "google": "Google Ads",
+                     "tiktok": "TikTok Ads", "linkedin": "LinkedIn Ads"}
+
+
+def _canais(canais_df, scope, start, end, platform="todas") -> list:
+    """Impressoes, cliques e conversoes por canal, agrupados por plataforma.
+
+    Uma lista por plataforma para o front desenhar um grafico de cada, porque as
+    escalas nao se comparam (Pesquisa e Facebook nao dividem eixo)."""
+    if canais_df is None or canais_df.empty:
+        return []
+    df = canais_df
+    if platform in ("meta", "google", "tiktok") and "platform" in df.columns:
+        df = df[df["platform"] == platform]
+    if scope is not None:
+        allowed = ((scope.get("meta_ids") or set()) | (scope.get("google_ids") or set())
+                   | (scope.get("tiktok_ids") or set()))
+        df = df[df["account_id"].astype(str).map(_digits).isin(allowed)]
+    df = _window(df, start, end)
+    if df is None or df.empty:
+        return []
+    saida = []
+    for plat in ("meta", "google", "tiktok", "linkedin"):
+        sub = df[df["platform"] == plat]
+        if sub.empty:
+            continue
+        g = (sub.groupby("canal")[["impressions", "clicks", "conversions", "spend"]]
+             .sum().sort_values("impressions", ascending=False))
+        itens = [{"canal": str(canal),
+                  "impressions": int(round(float(r["impressions"]))),
+                  "clicks": int(round(float(r["clicks"]))),
+                  "conversions": int(round(float(r["conversions"]))),
+                  "spend": round(float(r["spend"]), 2)}
+                 for canal, r in g.iterrows()
+                 if float(r["impressions"]) > 0 or float(r["clicks"]) > 0]
+        if itens:
+            saida.append({"plataforma": plat, "label": _CANAL_PLATAFORMA.get(plat, plat.title()),
+                          "itens": itens})
+    return saida
+
+
+# ----------------------------------------------------------------------------
 # Seguidores anotados a mao (rede sem API liberada)
 # ----------------------------------------------------------------------------
 def _registro_seguidores(cliente_key):
@@ -1051,6 +1095,7 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         "geo": _geo(store.geo, scope, start, end, "estado"),
         "geo_cidades": _geo(store.geo, scope, start, end, "cidade"),
         "demografia": _demographics(getattr(store, "demo", None), scope, start, end, platform),
+        "canais": _canais(getattr(store, "canais", None), scope, start, end, platform),
         "seguidores_manuais": _seguidores_manuais(
             _registro_seguidores((scope or {}).get("cliente_key")), start, end),
         "comparativo_plataforma": _platform_comparison(meta_cur, google_cur, tiktok_cur),

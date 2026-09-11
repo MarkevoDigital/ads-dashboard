@@ -70,6 +70,13 @@ DEMO_COLUMNS = ["date", "account_id", "platform", "dimension", "bucket",
                 "impressions", "clicks", "spend"]
 NUMERIC_DEMO = ["impressions", "clicks", "spend"]
 
+# Canal de veiculacao por conta e por dia: no Meta a plataforma (Facebook, Instagram,
+# WhatsApp...), no Google o tipo de campanha (Pesquisa, PMax, YouTube...), no TikTok o
+# posicionamento. Mesmo schema para as tres -> a secao e um groupby simples.
+CANAIS_COLUMNS = ["date", "account_id", "platform", "canal",
+                  "impressions", "clicks", "conversions", "spend"]
+NUMERIC_CANAIS = ["impressions", "clicks", "conversions", "spend"]
+
 # TikTok usa o MESMO schema do Meta (mesmas colunas/numericas): assim passa pelos
 # mesmos agregadores (metrics/analytics) sem tratamento especial. So e populado para
 # clientes com tiktok_advertiser_ids; senao fica vazio e o TikTok nao aparece.
@@ -458,8 +465,29 @@ def _synthesize(days: int = 75):
                             clicks=clk, spend=round(clk * rng.uniform(0.6, 1.8), 2),
                         ))
 
+    # Canais de exemplo: participacao fixa por plataforma, escalada pelo dia.
+    canais_rows = []
+    mix = {"meta": [("Facebook", 0.46), ("Instagram", 0.34), ("WhatsApp", 0.12),
+                    ("Audience Network", 0.05), ("Threads", 0.03)],
+           "google": [("Pesquisa", 0.44), ("Performance Max", 0.28), ("YouTube", 0.18),
+                      ("Display", 0.10)]}
+    for acc in accounts:
+        for i, d in enumerate(dates):
+            base_imp = rng.uniform(3000, 12000) * season(i, days)
+            for plat, dist in mix.items():
+                for canal, w in dist:
+                    imp = int(base_imp * w * rng.uniform(0.85, 1.15))
+                    if imp <= 0:
+                        continue
+                    clk = int(imp * rng.uniform(0.008, 0.03))
+                    canais_rows.append(dict(
+                        date=d.date(), account_id=acc, platform=plat, canal=canal,
+                        impressions=imp, clicks=clk,
+                        conversions=int(clk * rng.uniform(0.02, 0.12)),
+                        spend=round(clk * rng.uniform(0.6, 1.9), 2)))
+
     return (pd.DataFrame(meta_rows), pd.DataFrame(google_rows), pd.DataFrame(geo_rows),
-            pd.DataFrame(demo_rows))
+            pd.DataFrame(demo_rows), pd.DataFrame(canais_rows))
 
 
 def _synthesize_instagram(days: int = 60) -> pd.DataFrame:
@@ -490,13 +518,15 @@ def _ensure_sample_files():
     google_path = os.path.join(SAMPLE_DIR, "google_ads.csv")
     geo_path = os.path.join(SAMPLE_DIR, "geo.csv")
     demo_path = os.path.join(SAMPLE_DIR, "publico.csv")
-    if not all(os.path.exists(p) for p in (meta_path, google_path, geo_path, demo_path)):
-        meta_df, google_df, geo_df, demo_df = _synthesize()
+    canais_path = os.path.join(SAMPLE_DIR, "canais.csv")
+    if not all(os.path.exists(p) for p in (meta_path, google_path, geo_path, demo_path, canais_path)):
+        meta_df, google_df, geo_df, demo_df, canais_df = _synthesize()
         meta_df.to_csv(meta_path, index=False, encoding="utf-8")
         google_df.to_csv(google_path, index=False, encoding="utf-8")
         geo_df.to_csv(geo_path, index=False, encoding="utf-8")
         demo_df.to_csv(demo_path, index=False, encoding="utf-8")
-    return meta_path, google_path, geo_path, demo_path
+        canais_df.to_csv(canais_path, index=False, encoding="utf-8")
+    return meta_path, google_path, geo_path, demo_path, canais_path
 
 
 # ----------------------------------------------------------------------------
@@ -524,6 +554,7 @@ class DataStore:
         self.instagram = pd.DataFrame(columns=INSTAGRAM_COLUMNS)
         self.geo = pd.DataFrame(columns=GEO_COLUMNS)
         self.demo = pd.DataFrame(columns=DEMO_COLUMNS)
+        self.canais = pd.DataFrame(columns=CANAIS_COLUMNS)
         # account_id (so digitos) -> codigo ISO da moeda, vindo da API de cada
         # plataforma. Vazio = tudo cai no padrao (BRL).
         self.moedas: dict[str, str] = {}
@@ -533,13 +564,14 @@ class DataStore:
 
     def refresh(self) -> dict:
         with self._lock:
-            meta_df, google_df, tiktok_df, geo_df, demo_df, label = self._load_raw()
+            meta_df, google_df, tiktok_df, geo_df, demo_df, canais_df, label = self._load_raw()
             self.meta = _coerce(meta_df, META_COLUMNS, NUMERIC_META)
             self.google = _coerce(google_df, GOOGLE_COLUMNS, NUMERIC_GOOGLE)
             self.tiktok = _coerce(tiktok_df, TIKTOK_COLUMNS, NUMERIC_TIKTOK)
             self.instagram = _coerce(self._load_instagram(label), INSTAGRAM_COLUMNS, NUMERIC_INSTAGRAM)
             self.geo = _coerce_geo(geo_df)
             self.demo = _coerce(demo_df, DEMO_COLUMNS, NUMERIC_DEMO)
+            self.canais = _coerce(canais_df, CANAIS_COLUMNS, NUMERIC_CANAIS)
             self.moedas = self._load_moedas(label)
             self.updated_at = now_br()
             self.source_label = label
@@ -552,6 +584,7 @@ class DataStore:
             "tiktok_rows": len(self.tiktok),
             "instagram_rows": len(self.instagram),
             "demo_rows": len(self.demo),
+            "canais_rows": len(self.canais),
         }
 
     def _load_instagram(self, label: str) -> pd.DataFrame:
@@ -625,6 +658,7 @@ class DataStore:
                 pickle.dump({
                     "meta": self.meta, "google": self.google, "tiktok": self.tiktok,
                     "instagram": self.instagram, "geo": self.geo, "demo": self.demo,
+                    "canais": self.canais,
                     "moedas": self.moedas,
                     "updated_at": self.updated_at, "source_label": self.source_label,
                 }, fh, protocol=pickle.HIGHEST_PROTOCOL)
@@ -659,6 +693,9 @@ class DataStore:
                 # retrocompat: pickles anteriores ao publico nao tem a chave
                 dm = data.get("demo")
                 self.demo = dm if dm is not None else pd.DataFrame(columns=DEMO_COLUMNS)
+                # retrocompat: pickles anteriores aos canais nao tem a chave
+                cn = data.get("canais")
+                self.canais = cn if cn is not None else pd.DataFrame(columns=CANAIS_COLUMNS)
                 # retrocompat: pickles anteriores as moedas nao tem a chave
                 self.moedas = data.get("moedas") or {}
                 self.updated_at = ts
@@ -675,12 +712,13 @@ class DataStore:
         empty_geo = pd.DataFrame(columns=GEO_COLUMNS)
         empty_tiktok = pd.DataFrame(columns=TIKTOK_COLUMNS)
         empty_demo = pd.DataFrame(columns=DEMO_COLUMNS)
+        empty_canais = pd.DataFrame(columns=CANAIS_COLUMNS)
 
         def via_service_account():
             return (
                 _read_service_account(self.config, gs.get("aba_meta", "meta_ads")),
                 _read_service_account(self.config, gs.get("aba_google", "google_ads")),
-                empty_tiktok, empty_geo, empty_demo,
+                empty_tiktok, empty_geo, empty_demo, empty_canais,
                 "Google Sheets (conta de servico)",
             )
 
@@ -688,12 +726,12 @@ class DataStore:
             return (
                 _read_csv_url(gs["meta_csv_url"]),
                 _read_csv_url(gs["google_csv_url"]),
-                empty_tiktok, empty_geo, empty_demo,
+                empty_tiktok, empty_geo, empty_demo, empty_canais,
                 "Google Sheets (CSV publicado)",
             )
 
         def via_sample():
-            meta_path, google_path, geo_path, demo_path = _ensure_sample_files()
+            meta_path, google_path, geo_path, demo_path, canais_path = _ensure_sample_files()
             meta_sample = pd.read_csv(meta_path)
             # TikTok de exemplo (so p/ testar a UI): TIKTOK_SAMPLE=1 reaproveita uma fatia
             # do sample do Meta como um advertiser TikTok ficticio (id 7000000000001).
@@ -708,6 +746,7 @@ class DataStore:
                 meta_sample,
                 pd.read_csv(google_path),
                 tiktok_sample, pd.read_csv(geo_path), pd.read_csv(demo_path),
+                pd.read_csv(canais_path),
                 "Dados de exemplo",
             )
 
@@ -789,10 +828,23 @@ class DataStore:
                     print(f"[publico] {nome} falhou: {exc}")
             demo_frames = [d for d in demo_frames if d is not None and len(d)]
             demo_df = pd.concat(demo_frames, ignore_index=True) if demo_frames else empty_demo
+            # Canal de veiculacao: best-effort por plataforma, igual ao publico.
+            canais_frames = []
+            for nome, fn, cfg_key in (("meta", meta_api.fetch_canais, "meta"),
+                                      ("google", google_api.fetch_canais, "google_ads"),
+                                      ("tiktok", tiktok_api.fetch_canais, "tiktok")):
+                if nome == "tiktok" and not api.get("tiktok", {}).get("access_token"):
+                    continue
+                try:
+                    canais_frames.append(fn(api.get(cfg_key, {}), dias))
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[canais] {nome} falhou: {exc}")
+            canais_frames = [c for c in canais_frames if c is not None and len(c)]
+            canais_df = pd.concat(canais_frames, ignore_index=True) if canais_frames else empty_canais
             label = "API (Meta + Google Ads)"
             if not tiktok_df.empty:
                 label = "API (Meta + Google + TikTok Ads)"
-            return meta_df, google_df, tiktok_df, geo_df, demo_df, label
+            return meta_df, google_df, tiktok_df, geo_df, demo_df, canais_df, label
 
         api_cfg = self.config.get("api", {})
         has_api = bool(api_cfg.get("meta", {}).get("access_token")

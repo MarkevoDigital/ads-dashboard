@@ -6,6 +6,7 @@
   let trendChart = null, platformChart = null, clientLoaded = false, accountsSig = null;
   let geoMap = null, geoMarkers = null, monthsLoaded = false;
   let genderChart = null, ageChart = null, segChart = null;
+  let canalCharts = [];
   const MESES =["janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
@@ -71,6 +72,8 @@
     "🔁 Período atual vs. anterior": "🔁 Current vs. previous period",
     "📍 Mapa de calor — cliques por estado": "📍 Heat map — clicks by state",
     "👥 Público — gênero e faixa etária": "👥 Audience — gender and age",
+    "📊 Análise por canal": "📊 Breakdown by channel",
+    "Onde os anúncios apareceram no período: plataforma no Meta, tipo de campanha no Google, posicionamento no TikTok.": "Where the ads ran in the period: platform on Meta, campaign type on Google, placement on TikTok.",
     "Seguidores do": "Followers on",
     "Seguidores (total)": "Followers (total)",
     "Número da página, anotado manualmente. Última medição em": "Page follower count, recorded manually. Last reading on",
@@ -312,6 +315,7 @@
       $("kw-platform-row").classList.add("one-col");
       $("geo-section").classList.add("hidden");
       $("demo-section").classList.add("hidden");
+      $("canais-section").classList.add("hidden");
       $("tiktok-section").classList.add("hidden");
       // Instagram é orgânico: aparece mesmo sem veiculação de anúncios no período.
       renderInstagram(data);
@@ -363,6 +367,60 @@
     renderGeo(data.geo);
     renderGeoCities(data.geo_cidades);
     renderDemo(data.demografia);
+    renderCanais(data.canais);
+  }
+
+  // ---- Análise por canal: um gráfico por plataforma ----
+  // Impressões ficam em escala própria (eixo esquerdo) porque são ordens de grandeza
+  // acima de cliques e conversões — juntas no mesmo eixo, as outras duas somem.
+  function renderCanais(blocos) {
+    const sec = $("canais-section"), wrap = $("canais-wrap");
+    if (!sec || !wrap) return;
+    canalCharts.forEach((c) => { try { c.destroy(); } catch (e) {} });
+    canalCharts = [];
+    if (!blocos || !blocos.length) { sec.classList.add("hidden"); wrap.innerHTML = ""; return; }
+    sec.classList.remove("hidden");
+    wrap.innerHTML = blocos.map((b) => `
+      <div class="canal-bloco">
+        <h3 class="demo-title">${b.label}</h3>
+        <div class="chart-wrap small"><canvas id="chart-canal-${b.plataforma}"></canvas></div>
+      </div>`).join("");
+    blocos.forEach((b) => {
+      const ctx = $(`chart-canal-${b.plataforma}`);
+      if (!ctx) return;
+      const labels = b.itens.map((i) => i.canal);
+      const temConv = b.itens.some((i) => i.conversions > 0);
+      const datasets = [
+        { label: T("Impressões"), data: b.itens.map((i) => i.impressions),
+          backgroundColor: "#5b8cff", yAxisID: "y" },
+        { label: T("Cliques"), data: b.itens.map((i) => i.clicks),
+          backgroundColor: "#2ecc8f", yAxisID: "y1" },
+      ];
+      // Conversão zerada em todos os canais viraria uma faixa vazia no gráfico.
+      if (temConv) datasets.push({ label: T("Conversões"), data: b.itens.map((i) => i.conversions),
+        backgroundColor: "#ffb547", yAxisID: "y1" });
+      canalCharts.push(new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: "#e6eaf2" } },
+            tooltip: { callbacks: { afterBody: (itens) => {
+              const i = b.itens[itens[0].dataIndex];
+              return `${T("Investimento")}: ${fmt(i.spend, "currency")}`;
+            } } },
+          },
+          scales: {
+            x: { ticks: { color: "#93a0b8", autoSkip: false, maxRotation: 30 }, grid: { color: "#222a3a" } },
+            y: { position: "left", title: { display: true, text: T("Impressões"), color: "#93a0b8" },
+                 ticks: { color: "#93a0b8" }, grid: { color: "#222a3a" }, beginAtZero: true },
+            y1: { position: "right", title: { display: true, text: T("Cliques / Conversões"), color: "#93a0b8" },
+                  ticks: { color: "#93a0b8" }, grid: { drawOnChartArea: false }, beginAtZero: true },
+          },
+        },
+      }));
+    });
   }
 
   // ---- Público: gênero e faixa etária (segue período, plataforma e escopo do login) ----
@@ -1044,6 +1102,7 @@
     try { if (platformChart) platformChart.resize(); } catch (e) {}
     try { if (igChart) igChart.resize(); } catch (e) {}
     try { if (genderChart) genderChart.resize(); } catch (e) {}
+    canalCharts.forEach((c) => { try { c.resize(); } catch (e) {} });
     try { if (ageChart) ageChart.resize(); } catch (e) {}
     try { if (geoMap) geoMap.invalidateSize(); } catch (e) {}
   };

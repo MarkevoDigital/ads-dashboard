@@ -699,17 +699,25 @@ def _seguidores_manuais(registro, start, end) -> dict:
                   key=lambda h: str(h["data"]))
     if not hist:
         return vazio
-    ini, fim = _fmt_date(start), _fmt_date(end)
-    ate_fim = [h for h in hist if str(h["data"]) <= fim]
-    if not ate_fim:
-        return vazio
-    atual = ate_fim[-1]
+    ini = _fmt_date(start)
+    # Seguidores sao um SNAPSHOT, nao um acumulado da janela: o total exibido e SEMPRE
+    # a medicao mais recente, como no card do Instagram ("nao depende da janela"). Isso
+    # tambem resolve o descompasso natural de um dia — o painel fecha o periodo no
+    # ultimo dia CHEIO (em "30 dias", ontem) e o numero costuma ser anotado hoje.
+    atual = hist[-1]
+    # A base do crescimento e a ultima medicao ATE o inicio da janela; nao havendo
+    # nenhuma antes, a primeira de DENTRO dela serve. Sem as duas, nao ha o que comparar
+    # e o card mostra so o total, em vez de inventar 0%.
     antes = [h for h in hist if str(h["data"]) <= ini]
-    base_reg = antes[-1] if antes else (ate_fim[0] if len(ate_fim) > 1 else None)
+    if antes:
+        base_reg = antes[-1]
+    else:
+        dentro_ant = [h for h in hist if ini <= str(h["data"]) < str(atual["data"])]
+        base_reg = dentro_ant[0] if dentro_ant else None
     total = int(round(float(atual["seguidores"])))
     novos = total - int(round(float(base_reg["seguidores"]))) if base_reg else 0
     base = total - novos
-    dentro = [h for h in ate_fim if str(h["data"]) >= ini]
+    dentro = [h for h in hist if str(h["data"]) >= ini]
     return {
         "tem": True,
         "rede": registro.get("rede") or "LinkedIn",

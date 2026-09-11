@@ -471,7 +471,9 @@ def fetch_demo(tiktok_cfg: dict, days: int = 60) -> pd.DataFrame:
 # recusados com "is not supported" (BASIC e AUDIENCE). O recorte mais proximo que a
 # API aceita e 'platform', que e o SISTEMA do aparelho -> e isso que a secao mostra,
 # rotulado como sistema para nao se passar por posicionamento.
-_CANAL_TIKTOK = {"ANDROID": "Android", "IOS": "iOS", "PC": "PC", "OTHERS": "Outros"}
+# A API devolve IPHONE/IPAD (nao IOS): sem o de-para, o .title() escreveria "Iphone".
+_CANAL_TIKTOK = {"ANDROID": "Android", "IPHONE": "iPhone", "IPAD": "iPad",
+                 "IOS": "iOS", "PC": "PC", "OTHERS": "Outros", "UNKNOWN": "Desconhecido"}
 
 
 def fetch_canais(tiktok_cfg: dict, days: int = 60) -> pd.DataFrame:

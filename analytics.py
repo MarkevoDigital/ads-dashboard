@@ -623,6 +623,63 @@ def _instagram(ig_df, scope, start, end) -> dict:
 
 
 # ----------------------------------------------------------------------------
+# Seguidores anotados a mao (rede sem API liberada)
+# ----------------------------------------------------------------------------
+def _registro_seguidores(cliente_key):
+    """Registro do cliente no seguidores_manuais.json. Import tardio de propósito:
+    data_sources nao importa analytics, mas o caminho inverso so e preciso aqui."""
+    if not cliente_key:
+        return None
+    try:
+        from data_sources import load_seguidores_manuais
+        return (load_seguidores_manuais() or {}).get(cliente_key)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[seguidores] {cliente_key}: {exc}")
+        return None
+
+
+def _seguidores_manuais(registro, start, end) -> dict:
+    """Total e crescimento de seguidores a partir de medicoes manuais.
+
+    'total' e a ultima medicao ate o FIM da janela; a base e a ultima medicao ate
+    o INICIO dela (ou a primeira de dentro, quando nao existe nada anterior). Com
+    uma medicao so nao ha crescimento a mostrar, e o painel diz isso em vez de
+    fingir 0%."""
+    vazio = {"tem": False}
+    if not registro:
+        return vazio
+    hist = sorted((h for h in (registro.get("historico") or [])
+                   if h.get("seguidores") is not None and h.get("data")),
+                  key=lambda h: str(h["data"]))
+    if not hist:
+        return vazio
+    ini, fim = _fmt_date(start), _fmt_date(end)
+    ate_fim = [h for h in hist if str(h["data"]) <= fim]
+    if not ate_fim:
+        return vazio
+    atual = ate_fim[-1]
+    antes = [h for h in hist if str(h["data"]) <= ini]
+    base_reg = antes[-1] if antes else (ate_fim[0] if len(ate_fim) > 1 else None)
+    total = int(round(float(atual["seguidores"])))
+    novos = total - int(round(float(base_reg["seguidores"]))) if base_reg else 0
+    base = total - novos
+    dentro = [h for h in ate_fim if str(h["data"]) >= ini]
+    return {
+        "tem": True,
+        "rede": registro.get("rede") or "LinkedIn",
+        "url": registro.get("url") or "",
+        "total": total,
+        "novos": novos,
+        "crescimento": round(novos / base * 100.0, 2) if base > 0 else 0.0,
+        "comparavel": base_reg is not None,
+        "medido_em": str(atual["data"]),
+        "base_em": str(base_reg["data"]) if base_reg else "",
+        "serie": {"labels": [str(h["data"]) for h in dentro],
+                  "total": [int(round(float(h["seguidores"]))) for h in dentro]},
+    }
+
+
+# ----------------------------------------------------------------------------
 # Geo (mapa de calor)
 # ----------------------------------------------------------------------------
 def _geo(geo_df, scope, start, end, level="estado", platform=None) -> dict:
@@ -994,6 +1051,8 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         "geo": _geo(store.geo, scope, start, end, "estado"),
         "geo_cidades": _geo(store.geo, scope, start, end, "cidade"),
         "demografia": _demographics(getattr(store, "demo", None), scope, start, end, platform),
+        "seguidores_manuais": _seguidores_manuais(
+            _registro_seguidores((scope or {}).get("cliente_key")), start, end),
         "comparativo_plataforma": _platform_comparison(meta_cur, google_cur, tiktok_cur),
         "comparativo_periodo": _period_comparison(meta_cur, google_cur, meta_prev, google_prev,
                                                   history, tiktok_cur, tiktok_prev),

@@ -27,3 +27,6 @@ tmp/store_cache.pkl
 tmp/*.pkl
 
 .venv-preview/
+
+# Seguidores anotados a mao (dado por deploy)
+seguidores_manuais.json

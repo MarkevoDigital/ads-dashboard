@@ -175,7 +175,9 @@ def _build_users():
                       "instagram_ids": c.get("_instagram_ids", set()),
                       "leads_form_only": bool(c.get("leads_form_only", False)),
                       "moeda": c.get("_moeda"),
-                      "funil_ordem": c.get("_funil_ordem")},
+                      "funil_ordem": c.get("_funil_ordem"),
+                      # usada para achar o cliente no seguidores_manuais.json
+                      "cliente_key": c["key"]},
             "nome": c.get("nome", c["key"]),
             "idioma": c.get("_idioma", "pt"),
         }

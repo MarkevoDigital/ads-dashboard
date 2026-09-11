@@ -5,7 +5,7 @@
   const $ = (id) => document.getElementById(id);
   let trendChart = null, platformChart = null, clientLoaded = false, accountsSig = null;
   let geoMap = null, geoMarkers = null, monthsLoaded = false;
-  let genderChart = null, ageChart = null;
+  let genderChart = null, ageChart = null, segChart = null;
   const MESES =["janeiro", "fevereiro", "março", "abril", "maio", "junho",
     "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
@@ -71,6 +71,16 @@
     "🔁 Período atual vs. anterior": "🔁 Current vs. previous period",
     "📍 Mapa de calor — cliques por estado": "📍 Heat map — clicks by state",
     "👥 Público — gênero e faixa etária": "👥 Audience — gender and age",
+    "Seguidores do": "Followers on",
+    "Seguidores (total)": "Followers (total)",
+    "Número da página, anotado manualmente. Última medição em": "Page follower count, recorded manually. Last reading on",
+    "Primeira medição, em": "First reading, on",
+    "O crescimento aparece a partir da segunda.": "Growth shows up from the second reading onwards.",
+    "Medido em": "Measured on",
+    "Desde": "Since",
+    "Novos no período": "New in the period",
+    "Crescimento": "Growth",
+    "Sobre a base no início do período": "Against the base at the start of the period",
     "Impressões, cliques e investimento por gênero e faixa etária, somando as plataformas do período.": "Impressions, clicks and spend by gender and age range, across the platforms in the period.",
     "No Google, campanhas Performance Max não informam gênero nem faixa etária: os números abaixo consideram só as campanhas com segmentação demográfica (Pesquisa/Display).": "On Google, Performance Max campaigns do not report gender or age: the numbers below cover only campaigns with demographic targeting (Search/Display).",
     "Gênero": "Gender",
@@ -344,6 +354,7 @@
     renderTikTok(data, plat);
     renderCampaigns(data.campanhas);
     renderInstagram(data);
+    renderSeguidores(data.seguidores_manuais);
     renderKeywords(data.palavras_chave);
     renderPlatform(data.comparativo_plataforma);
     renderPeriod(data.comparativo_periodo);
@@ -804,6 +815,50 @@
 
   // ---- Seguidores do Instagram (orgânico) ----
   let igChart = null;
+  // ---- Seguidores anotados a mão (rede sem API liberada, hoje o LinkedIn) ----
+  function renderSeguidores(seg) {
+    const sec = $("seguidores-section");
+    if (!sec) return;
+    if (!seg || !seg.tem) {
+      sec.classList.add("hidden");
+      if (segChart) { segChart.destroy(); segChart = null; }
+      return;
+    }
+    sec.classList.remove("hidden");
+    const rede = seg.rede || "LinkedIn";
+    $("seg-titulo").textContent = `👥 ${T("Seguidores do")} ${rede}`;
+    $("seg-hint").textContent = seg.comparavel
+      ? `${T("Número da página, anotado manualmente. Última medição em")} ${seg.medido_em}.`
+      : `${T("Primeira medição, em")} ${seg.medido_em}. ${T("O crescimento aparece a partir da segunda.")}`;
+    const cresc = seg.crescimento || 0;
+    const sinal = cresc > 0 ? "▲" : cresc < 0 ? "▼" : "■";
+    const cards = [
+      `<div class="invest-card iv-ig"><div class="iv-label">${T("Seguidores (total)")}</div>
+        <div class="iv-value">${fmt(seg.total, "int")}</div>
+        <div class="iv-prev">${T("Medido em")} ${seg.medido_em}</div></div>`];
+    if (seg.comparavel) {
+      cards.push(`<div class="invest-card iv-ig"><div class="iv-label">${T("Novos no período")}</div>
+        <div class="iv-value">${seg.novos >= 0 ? "+" : ""}${fmt(seg.novos, "int")}</div>
+        <div class="iv-prev">${T("Desde")} ${seg.base_em}</div></div>`);
+      cards.push(`<div class="invest-card iv-ig"><div class="iv-label">${T("Crescimento")}</div>
+        <div class="iv-value">${sinal} ${Math.abs(cresc).toFixed(2).replace(".", ",")}%</div>
+        <div class="iv-prev">${T("Sobre a base no início do período")}</div></div>`);
+    }
+    $("seg-kpis").innerHTML = cards.join("");
+
+    if (segChart) { segChart.destroy(); segChart = null; }
+    const s = seg.serie || { labels: [], total: [] };
+    // Duas medições já viram linha; com uma só o gráfico não diz nada.
+    if (s.labels.length < 2) { $("chart-seg").parentElement.classList.add("hidden"); return; }
+    $("chart-seg").parentElement.classList.remove("hidden");
+    segChart = new Chart($("chart-seg"), {
+      type: "line",
+      data: { labels: s.labels, datasets: [{ label: T("Seguidores (total)"), data: s.total,
+        borderColor: "#5b8cff", backgroundColor: "rgba(91,140,255,.25)", tension: .3, pointRadius: 3, fill: true }] },
+      options: baseOpts({ stacked: false }),
+    });
+  }
+
   function renderInstagram(data) {
     const sec = $("instagram-section");
     const ig = data.instagram;

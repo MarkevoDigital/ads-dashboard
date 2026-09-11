@@ -85,6 +85,27 @@ NUMERIC_INSTAGRAM = ["new_followers", "followers_total"]
 # ----------------------------------------------------------------------------
 # Config
 # ----------------------------------------------------------------------------
+SEGUIDORES_FILE = os.path.join(BASE_DIR, "seguidores_manuais.json")
+
+
+def load_seguidores_manuais() -> dict:
+    """Seguidores anotados a mao, por cliente, para redes sem API de leitura.
+
+    Existe porque o LinkedIn so entrega numero de seguidores pelo Community
+    Management API, que exige app exclusivo e aprovacao de parceiro, e o termo
+    de uso dele proibe ler a pagina por robo. Arquivo opcional: sem ele a secao
+    simplesmente nao aparece. Lido a cada requisicao (e minusculo), entao
+    registrar um numero novo aparece na hora, sem restart."""
+    try:
+        with open(SEGUIDORES_FILE, encoding="utf-8") as fh:
+            return json.load(fh) or {}
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:  # noqa: BLE001
+        print(f"[seguidores] falha ao ler {SEGUIDORES_FILE}: {exc}")
+        return {}
+
+
 def load_config() -> dict:
     path = os.path.join(BASE_DIR, "config.json")
     if not os.path.exists(path):

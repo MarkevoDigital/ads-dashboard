@@ -201,8 +201,12 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0, ordem=None) -> 
             rates.append({"label": "Taxa de visualização",
                           "value": round((nv / impr) if impr else 0.0, 4)})
         elif nkey in _ECOM_RATES:
-            # Converte da etapa ANTERIOR do funil de loja, nao dos cliques.
-            _, _, pv = seq[i]
+            # Converte da etapa ANTERIOR do funil de loja (checkout/carrinho, compra/
+            # checkout). A cadeia comeca nos CLIQUES: num funil misto (engajamento +
+            # venda), o carrinho que vem depois de "Engajamentos" nao divide por eles.
+            pkey, _, pv = seq[i]
+            if pkey not in _ECOM_RATES:
+                pv = clicks
             rates.append({"label": _ECOM_RATES[nkey],
                           "value": round((nv / pv) if pv else 0.0, 4)})
         else:

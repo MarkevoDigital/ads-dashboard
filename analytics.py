@@ -176,6 +176,13 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0, ordem=None) -> 
         if val > 0 or (key == "clicks" and impr > 0):
             seq.append((key, _FUNNEL_LABELS[key], val))
 
+    # Visualizacoes de video ficam logo abaixo das impressoes, em qualquer ordem
+    # configurada: a taxa de visualizacao sai delas (e o CTR seguinte tambem).
+    chaves = [k for k, _, _ in seq]
+    if "video_views" in chaves and "impressions" in chaves:
+        vv = seq.pop(chaves.index("video_views"))
+        seq.insert([k for k, _, _ in seq].index("impressions") + 1, vv)
+
     stages = []
     for (k, lb, v) in seq:
         st = {"label": lb, "value": v, "fmt": "int"}
@@ -695,17 +702,40 @@ def _canais(canais_df, scope, start, end, platform="todas") -> list:
 # ----------------------------------------------------------------------------
 # Seguidores anotados a mao (rede sem API liberada)
 # ----------------------------------------------------------------------------
-def _registro_seguidores(cliente_key):
-    """Registro do cliente no seguidores_manuais.json. Import tardio de propósito:
-    data_sources nao importa analytics, mas o caminho inverso so e preciso aqui."""
-    if not cliente_key:
-        return None
+def _seguidores_escopo(scope, start, end) -> dict:
+    """Seguidores da Pagina (LinkedIn, seguidores_manuais.json) do que o login enxerga:
+    o proprio cliente, os clientes de uma agencia de grupo ou, no admin, todos. Sem
+    isso o admin nunca via o bloco (nao tem cliente_key). Varios registros somam total
+    e novos. Import tardio: data_sources nao importa analytics."""
+    vazio = {"tem": False}
     try:
         from data_sources import load_seguidores_manuais
-        return (load_seguidores_manuais() or {}).get(cliente_key)
+        todos = load_seguidores_manuais() or {}
     except Exception as exc:  # noqa: BLE001
-        print(f"[seguidores] {cliente_key}: {exc}")
-        return None
+        print(f"[seguidores] {exc}")
+        return vazio
+    if scope is None:
+        chaves = sorted(todos)
+    elif scope.get("cliente_key"):
+        chaves = [scope["cliente_key"]]
+    else:
+        chaves = list(scope.get("cliente_keys") or [])
+    partes = [p for p in (_seguidores_manuais(todos.get(k), start, end) for k in chaves) if p.get("tem")]
+    if not partes:
+        return vazio
+    if len(partes) == 1:
+        return partes[0]
+    total = sum(p["total"] for p in partes)
+    novos = sum(p["novos"] for p in partes if p["comparavel"])
+    base = total - novos
+    return {
+        "tem": True, "rede": partes[0]["rede"], "url": "", "total": total, "novos": novos,
+        "crescimento": round(novos / base * 100.0, 2) if base > 0 else 0.0,
+        "comparavel": any(p["comparavel"] for p in partes),
+        "medido_em": max(p["medido_em"] for p in partes),
+        "base_em": min((p["base_em"] for p in partes if p["base_em"]), default=""),
+        "serie": {"labels": [], "total": []},
+    }
 
 
 def _seguidores_manuais(registro, start, end) -> dict:
@@ -925,6 +955,40 @@ def _period_comparison(meta_cur, google_cur, meta_prev, google_prev, history,
 # ----------------------------------------------------------------------------
 # Secao dedicada do TikTok (KPIs headline + melhores anuncios + geo)
 # ----------------------------------------------------------------------------
+_RESUMO_KPIS = ["spend", "impressions", "clicks", "conversions", "ctr", "cpc"]
+# LinkedIn so roda alcance e engajamento: conversao ficaria sempre zerada.
+_RESUMO_KPIS_LINKEDIN = ["spend", "impressions", "clicks", "engagement", "ctr", "cpc"]
+
+
+def _resumo_plataformas(meta_cur, google_cur, tiktok_cur, linkedin_cur,
+                        meta_prev, google_prev, tiktok_prev, linkedin_prev) -> list[dict]:
+    """KPIs de destaque de CADA plataforma com investimento no periodo (o mesmo bloco
+    que antes existia so para o TikTok). Os frames ja chegam filtrados por escopo,
+    conta e plataforma."""
+    vm, vg = meta_cur.iloc[0:0], google_cur.iloc[0:0]
+    fontes = [
+        ("meta", "Meta Ads", (meta_cur, vg, None), (meta_prev, vg, None), _RESUMO_KPIS),
+        ("google", "Google Ads", (vm, google_cur, None), (vm, google_prev, None), _RESUMO_KPIS),
+        ("tiktok", "TikTok Ads", (vm, vg, tiktok_cur), (vm, vg, tiktok_prev), _RESUMO_KPIS),
+        ("linkedin", "LinkedIn Ads", (vm, vg, linkedin_cur), (vm, vg, linkedin_prev), _RESUMO_KPIS_LINKEDIN),
+    ]
+    out = []
+    for plat, label, (mc, gc, xc), (mp, gp, xp), chaves in fontes:
+        if M.kpi_value(mc, gc, "spend", xc) <= 0:
+            continue
+        kpis = []
+        for key in chaves:
+            spec = M.KPI_CATALOG[key]
+            cur = M.kpi_value(mc, gc, key, xc)
+            prev = M.kpi_value(mp, gp, key, xp)
+            delta = M.pct_change(cur, prev)
+            kpis.append({"key": key, "label": spec["label"], "fmt": spec["fmt"],
+                         "value": round(cur, 4), "delta_pct": delta,
+                         "good": M.is_good(spec["dir"], delta)})
+        out.append({"plataforma": plat, "label": label, "kpis": kpis})
+    return out
+
+
 def _tiktok_section(tiktok_cur, tiktok_prev, geo_df, scope, start, end) -> dict:
     """Secao propria do TikTok. O investimento e as campanhas/anuncios TikTok ja
     aparecem combinados (investimento.tiktok + tabelas de campanhas/anuncios); aqui
@@ -1045,6 +1109,7 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         return {"vazio": True, "tem_tiktok": tem_tiktok, "tem_linkedin": tem_linkedin,
                 "tem_instagram": tem_instagram,
                 "instagram": _instagram(instagram, scope, _start, _end),
+                "seguidores_manuais": _seguidores_escopo(scope, _start, _end),
                 "moeda": _moeda_escopo(store, (meta, google, tiktok, linkedin),
                                        (scope or {}).get("moeda")),
                 "filtros": {"account": account, "platform": platform, "days": days}}
@@ -1187,8 +1252,9 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         "geo_cidades": _geo(store.geo, scope, start, end, "cidade"),
         "demografia": _demographics(getattr(store, "demo", None), scope, start, end, platform),
         "canais": _canais(getattr(store, "canais", None), scope, start, end, platform),
-        "seguidores_manuais": _seguidores_manuais(
-            _registro_seguidores((scope or {}).get("cliente_key")), start, end),
+        "seguidores_manuais": _seguidores_escopo(scope, start, end),
+        "resumo_plataformas": _resumo_plataformas(meta_cur, google_cur, tiktok_cur, linkedin_cur,
+                                                  meta_prev, google_prev, tiktok_prev, linkedin_prev),
         "comparativo_plataforma": _platform_comparison(meta_cur, google_cur, tiktok_cur, linkedin_cur),
         "comparativo_periodo": _period_comparison(meta_cur, google_cur, meta_prev, google_prev,
                                                   history, extra_cur, extra_prev),

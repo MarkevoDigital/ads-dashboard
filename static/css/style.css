@@ -173,6 +173,19 @@ tbody tr:hover { background: var(--panel-2); }
 .plat-block-info { color: var(--muted); font-size: 12px; }
 .plat-block .ads-grid { padding-bottom: 8px; }
 
+/* Resumo por plataforma (abaixo da evolucao diaria): borda na cor da plataforma */
+.plat-summaries { display: flex; flex-direction: column; gap: 18px; }
+.plat-summaries:empty { display: none; }
+.plat-summary { border-left: 4px solid var(--brand); }
+.plat-summary.meta { border-left-color: #5b8cff; }
+.plat-summary.google { border-left-color: #2ecc8f; }
+.plat-summary.tiktok { border-left-color: #ff4d67; }
+.plat-summary.linkedin { border-left-color: #0a66c2; }
+
+/* Seguidores Instagram + LinkedIn lado a lado */
+#followers-row > .card { min-width: 0; }
+#seguidores-section { border-left: 4px solid #0a66c2; }
+
 /* Visao geral por objetivo: os blocos ficam dentro de um card com filtro */
 #objective-blocks { display: flex; flex-direction: column; gap: 12px; }
 #objective-section .obj-block { background: transparent; padding: 12px 14px; margin: 0; }

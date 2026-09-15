@@ -89,7 +89,8 @@
     "Onde os anúncios apareceram no período: plataforma no Meta, tipo de campanha no Google, posicionamento no TikTok.": "Where the ads ran in the period: platform on Meta, campaign type on Google, placement on TikTok.",
     "Seguidores do": "Followers on",
     "Seguidores (total)": "Followers (total)",
-    "Número da página, anotado manualmente. Última medição em": "Page follower count, recorded manually. Last reading on",
+    "Número de seguidores da página. Última medição em": "Page follower count. Last reading on",
+    "Desempenho da plataforma no período (também já somado aos totais e gráficos acima).": "Platform performance in the period (already included in the totals and charts above).",
     "Primeira medição, em": "First reading, on",
     "O crescimento aparece a partir da segunda.": "Growth shows up from the second reading onwards.",
     "Medido em": "Measured on",
@@ -330,9 +331,11 @@
       $("geo-section").classList.add("hidden");
       $("demo-section").classList.add("hidden");
       $("canais-section").classList.add("hidden");
-      $("tiktok-section").classList.add("hidden");
-      // Instagram é orgânico: aparece mesmo sem veiculação de anúncios no período.
+      $("platform-summaries").innerHTML = "";
+      // Seguidores (Instagram e LinkedIn) são orgânicos: aparecem mesmo sem veiculação.
       renderInstagram(data);
+      renderSeguidores(data.seguidores_manuais);
+      syncFollowersRow();
       return;
     }
 
@@ -351,6 +354,7 @@
     renderInvestimento(data.investimento);
     renderObjectiveBlocks(data);
     renderTrend(data.serie_temporal);
+    renderResumoPlataformas(data);
     renderAdSets(data.conjuntos);
     renderAds(data.anuncios);
     // TikTok: opção no seletor de plataforma + seção dedicada (data-driven: só p/ clientes
@@ -365,10 +369,10 @@
     renderBestAds(data, plat);
     $("ads-table-section").classList.toggle("hidden",
       plat === "google" || !(data.anuncios || []).length);
-    renderTikTok(data, plat);
     renderCampaigns(data.campanhas);
     renderInstagram(data);
     renderSeguidores(data.seguidores_manuais);
+    syncFollowersRow();
     renderKeywords(data.palavras_chave);
     renderPlatform(data.comparativo_plataforma);
     renderPeriod(data.comparativo_periodo);
@@ -567,23 +571,31 @@
     }
   }
 
-  // ---- TikTok: seção dedicada (KPIs de destaque + melhores anúncios do TikTok) ----
-  function renderTikTok(data, plat) {
-    const sec = $("tiktok-section");
-    const tk = data.tiktok;
-    // Mostra só quando o cliente tem TikTok e o filtro não está em Meta/Google.
-    if (!data.tem_tiktok || !tk || plat === "meta" || plat === "google" || plat === "linkedin") {
-      sec.classList.add("hidden"); return;
-    }
-    sec.classList.remove("hidden");
-    $("tiktok-kpis").innerHTML = (tk.kpis || []).map((c) => `
-      <div class="kpi">
-        <div class="k-label">${c.label}</div>
-        <div class="k-value">${fmt(c.value, c.fmt)}</div>
-        ${deltaHtml(c.delta_pct, c.good)}
-      </div>`).join("");
-    // Os melhores anúncios do TikTok ficam na seção "Melhores anúncios", abaixo da
-    // tabela de anúncios veiculados (renderBestAds).
+  // ---- Resumo por plataforma (abaixo da Evolução diária): um bloco por plataforma ----
+  // O backend só manda plataformas com investimento no período, já respeitando escopo,
+  // conta e o filtro de plataforma.
+  const PLAT_ICONES = { meta: "📘", google: "🔎", tiktok: "🎵", linkedin: "💼" };
+  function renderResumoPlataformas(data) {
+    const blocos = data.resumo_plataformas || [];
+    $("platform-summaries").innerHTML = blocos.map((b) => `
+      <section class="card plat-summary ${b.plataforma}">
+        <h2>${PLAT_ICONES[b.plataforma] || ""} ${b.label}</h2>
+        <p class="hint">${T("Desempenho da plataforma no período (também já somado aos totais e gráficos acima).")}</p>
+        <div class="kpi-grid">${(b.kpis || []).map((c) => `
+          <div class="kpi">
+            <div class="k-label">${c.label}</div>
+            <div class="k-value">${fmt(c.value, c.fmt)}</div>
+            ${deltaHtml(c.delta_pct, c.good)}
+          </div>`).join("")}</div>
+      </section>`).join("");
+  }
+
+  // Seguidores do Instagram e do LinkedIn dividem uma linha; com um só, ele ocupa tudo.
+  function syncFollowersRow() {
+    const ig = !$("instagram-section").classList.contains("hidden");
+    const seg = !$("seguidores-section").classList.contains("hidden");
+    $("followers-row").classList.toggle("hidden", !ig && !seg);
+    $("followers-row").classList.toggle("one-col", !(ig && seg));
   }
 
   // ---- Comentario unico ----
@@ -928,19 +940,20 @@
     const rede = seg.rede || "LinkedIn";
     $("seg-titulo").textContent = `👥 ${T("Seguidores do")} ${rede}`;
     $("seg-hint").textContent = seg.comparavel
-      ? `${T("Número da página, anotado manualmente. Última medição em")} ${seg.medido_em}.`
+      ? `${T("Número de seguidores da página. Última medição em")} ${seg.medido_em}.`
       : `${T("Primeira medição, em")} ${seg.medido_em}. ${T("O crescimento aparece a partir da segunda.")}`;
+    const cor = /linkedin/i.test(rede) ? "iv-linkedin" : "iv-ig";
     const cresc = seg.crescimento || 0;
     const sinal = cresc > 0 ? "▲" : cresc < 0 ? "▼" : "■";
     const cards = [
-      `<div class="invest-card iv-ig"><div class="iv-label">${T("Seguidores (total)")}</div>
+      `<div class="invest-card ${cor}"><div class="iv-label">${T("Seguidores (total)")}</div>
         <div class="iv-value">${fmt(seg.total, "int")}</div>
         <div class="iv-prev">${T("Medido em")} ${seg.medido_em}</div></div>`];
     if (seg.comparavel) {
-      cards.push(`<div class="invest-card iv-ig"><div class="iv-label">${T("Novos no período")}</div>
+      cards.push(`<div class="invest-card ${cor}"><div class="iv-label">${T("Novos no período")}</div>
         <div class="iv-value">${seg.novos >= 0 ? "+" : ""}${fmt(seg.novos, "int")}</div>
         <div class="iv-prev">${T("Desde")} ${seg.base_em}</div></div>`);
-      cards.push(`<div class="invest-card iv-ig"><div class="iv-label">${T("Crescimento")}</div>
+      cards.push(`<div class="invest-card ${cor}"><div class="iv-label">${T("Crescimento")}</div>
         <div class="iv-value">${sinal} ${Math.abs(cresc).toFixed(2).replace(".", ",")}%</div>
         <div class="iv-prev">${T("Sobre a base no início do período")}</div></div>`);
     }

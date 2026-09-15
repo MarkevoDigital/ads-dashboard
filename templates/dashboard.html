@@ -91,6 +91,9 @@
       <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
     </section>
 
+    <!-- Resumo por plataforma (um bloco por plataforma com investimento no período) -->
+    <div id="platform-summaries" class="plat-summaries"></div>
+
     <!-- Visão geral por objetivo (somada por padrão; filtro por plataforma) -->
     <section class="card hidden" id="objective-section">
       <div class="card-head">
@@ -105,28 +108,31 @@
       <div id="objective-blocks"></div>
     </section>
 
+    <!-- Seguidores (Instagram + LinkedIn) lado a lado, acima das campanhas -->
+    <div class="two-col hidden" id="followers-row">
+      <!-- Seguidores do Instagram (aparece SÓ para clientes com conta de IG vinculada) -->
+      <section class="card hidden" id="instagram-section">
+        <h2 data-i18n="📸 Seguidores do Instagram">📸 Seguidores do Instagram</h2>
+        <p class="hint" data-i18n="Dados orgânicos da conta (todos os seguidores, não só os vindos de anúncios).">Dados orgânicos da conta (todos os seguidores, não só os vindos de anúncios).</p>
+        <div id="ig-kpis" class="invest-grid"></div>
+        <div class="chart-wrap small ig-chart"><canvas id="chart-ig"></canvas></div>
+        <div id="ig-wrap" class="table-wrap"></div>
+      </section>
+
+      <!-- Seguidores da Página do LinkedIn (medição diária) -->
+      <section class="card hidden" id="seguidores-section">
+        <h2 id="seg-titulo">👥 Seguidores</h2>
+        <p class="hint" id="seg-hint"></p>
+        <div id="seg-kpis" class="invest-grid"></div>
+        <div class="chart-wrap small ig-chart"><canvas id="chart-seg"></canvas></div>
+      </section>
+    </div>
+
     <!-- Campanhas por plataforma -->
     <section class="card">
       <h2 data-i18n="🗂️ Campanhas por plataforma">🗂️ Campanhas por plataforma</h2>
       <p class="hint" data-i18n="Campanhas com veiculação no período filtrado.">Campanhas com veiculação no período filtrado.</p>
       <div id="campaigns-wrap"></div>
-    </section>
-
-    <!-- Seguidores do Instagram (aparece SÓ para clientes com conta de IG vinculada) -->
-    <section class="card hidden" id="instagram-section">
-      <h2 data-i18n="📸 Seguidores do Instagram">📸 Seguidores do Instagram</h2>
-      <p class="hint" data-i18n="Dados orgânicos da conta (todos os seguidores, não só os vindos de anúncios).">Dados orgânicos da conta (todos os seguidores, não só os vindos de anúncios).</p>
-      <div id="ig-kpis" class="invest-grid"></div>
-      <div class="chart-wrap small ig-chart"><canvas id="chart-ig"></canvas></div>
-      <div id="ig-wrap" class="table-wrap"></div>
-    </section>
-
-    <!-- Seguidores de rede sem API (LinkedIn): números anotados a mão -->
-    <section class="card hidden" id="seguidores-section">
-      <h2 id="seg-titulo">👥 Seguidores</h2>
-      <p class="hint" id="seg-hint"></p>
-      <div id="seg-kpis" class="invest-grid"></div>
-      <div class="chart-wrap small ig-chart"><canvas id="chart-seg"></canvas></div>
     </section>
 
     <!-- Conjuntos de anúncios / Grupos de recursos -->
@@ -167,13 +173,6 @@
       <h2 data-i18n="🏆 Melhores anúncios">🏆 Melhores anúncios</h2>
       <p class="hint" data-i18n="Criativo destaque por objetivo, separado por plataforma.">Criativo destaque por objetivo, separado por plataforma.</p>
       <div id="best-ads"></div>
-    </section>
-
-    <!-- Seção dedicada TikTok Ads (aparece SÓ para clientes com TikTok) -->
-    <section class="card hidden" id="tiktok-section">
-      <h2 data-i18n="🎵 TikTok Ads">🎵 TikTok Ads</h2>
-      <p class="hint" data-i18n="Desempenho do TikTok no período (também já somado aos totais e gráficos acima).">Desempenho do TikTok no período (também já somado aos totais e gráficos acima).</p>
-      <div id="tiktok-kpis" class="kpi-grid tk-kpis"></div>
     </section>
 
     <div class="two-col" id="kw-platform-row">

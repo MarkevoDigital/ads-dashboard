@@ -189,6 +189,8 @@ def _build_users():
                 if users.get(k, {}).get("scope") is not None]
         uniao = {"meta_ids": set(), "google_ids": set(), "tiktok_ids": set(), "linkedin_ids": set(),
                  "instagram_ids": set(), "leads_form_only": False,
+                 # clientes do grupo: seguidores da Pagina (LinkedIn) somados no bloco
+                 "cliente_keys": list(subs),
                  "moeda": a.get("_moeda")}
         for k in subs:
             sc = users[k]["scope"]

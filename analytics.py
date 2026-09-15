@@ -26,6 +26,16 @@ def _window(df, start, end):
     return df[(df["date"] >= start) & (df["date"] <= end)]
 
 
+def _junta(a, b):
+    """Concatena duas fontes no schema do Meta ignorando as vazias. TikTok e LinkedIn
+    entram JUNTOS nas somas (a matematica e a mesma); so as funcoes que rotulam por
+    plataforma recebem cada um separado."""
+    frames = [x for x in (a, b) if x is not None and not x.empty]
+    if not frames:
+        return a if a is not None else b
+    return frames[0] if len(frames) == 1 else pd.concat(frames, ignore_index=True)
+
+
 def _fmt_date(ts):
     return pd.Timestamp(ts).strftime("%Y-%m-%d")
 
@@ -398,11 +408,11 @@ _META_CONV_COL = {
 }
 
 
-def _campaigns(meta_cur, google_cur, tiktok_cur=None) -> list[dict]:
+def _campaigns(meta_cur, google_cur, tiktok_cur=None, linkedin_cur=None) -> list[dict]:
     rows = []
     # TikTok usa o schema do Meta -> agrega como "meta" (is_meta=True).
     sources = [("Meta", meta_cur, True), ("Google", google_cur, False),
-               ("TikTok", tiktok_cur, True)]
+               ("TikTok", tiktok_cur, True), ("LinkedIn", linkedin_cur, True)]
     for plat, df, is_meta in sources:
         if df is None or df.empty:
             continue
@@ -511,12 +521,12 @@ def _ad_sets(meta_cur, google_cur, tiktok_cur=None) -> list[dict]:
     return rows
 
 
-def _ads(meta_cur, tiktok_cur=None) -> list[dict]:
+def _ads(meta_cur, tiktok_cur=None, linkedin_cur=None) -> list[dict]:
     """Anuncios veiculados (Meta e TikTok), agrupados por nome+campanha. Meta e TikTok
     tem dados por anuncio; o Google e nivel campanha/palavra-chave. Mesmo formato da
     tabela de campanhas, com a coluna 'campanha' indicando a campanha do anuncio."""
     rows = []
-    for plat, df in [("Meta", meta_cur), ("TikTok", tiktok_cur)]:
+    for plat, df in [("Meta", meta_cur), ("TikTok", tiktok_cur), ("LinkedIn", linkedin_cur)]:
         if df is None or df.empty:
             continue
         has_adset = "adset" in df.columns
@@ -639,7 +649,7 @@ def _canais(canais_df, scope, start, end, platform="todas") -> list:
     if canais_df is None or canais_df.empty:
         return []
     df = canais_df
-    if platform in ("meta", "google", "tiktok") and "platform" in df.columns:
+    if platform in ("meta", "google", "tiktok", "linkedin") and "platform" in df.columns:
         df = df[df["platform"] == platform]
     if scope is not None:
         allowed = ((scope.get("meta_ids") or set()) | (scope.get("google_ids") or set())
@@ -790,7 +800,7 @@ def _demographics(demo_df, scope, start, end, platform="todas") -> dict:
     if demo_df is None or demo_df.empty:
         return empty
     df = demo_df
-    if platform in ("meta", "google", "tiktok") and "platform" in df.columns:
+    if platform in ("meta", "google", "tiktok", "linkedin") and "platform" in df.columns:
         df = df[df["platform"] == platform]
     if scope is not None:
         allowed = ((scope.get("meta_ids") or set()) | (scope.get("google_ids") or set())
@@ -830,7 +840,7 @@ def _demographics(demo_df, scope, start, end, platform="todas") -> dict:
 # ----------------------------------------------------------------------------
 # Comparativos
 # ----------------------------------------------------------------------------
-def _platform_comparison(meta_cur, google_cur, tiktok_cur=None) -> dict:
+def _platform_comparison(meta_cur, google_cur, tiktok_cur=None, linkedin_cur=None) -> dict:
     empty_g = pd.DataFrame(columns=["impressions", "clicks", "cost", "conversions", "conversion_value"])
     empty_m = pd.DataFrame(columns=meta_cur.columns)
     def block(m, g, t=None):
@@ -846,11 +856,13 @@ def _platform_comparison(meta_cur, google_cur, tiktok_cur=None) -> dict:
     if tiktok_cur is not None and not tiktok_cur.empty:
         # TikTok usa schema do Meta -> passa como frame meta vazio + tiktok.
         out["tiktok"] = block(empty_m, empty_g, tiktok_cur)
+    if linkedin_cur is not None and not linkedin_cur.empty:
+        out["linkedin"] = block(empty_m, empty_g, linkedin_cur)
     return out
 
 
 def _investimento(meta_cur, google_cur, meta_prev, google_prev,
-                  tiktok_cur=None, tiktok_prev=None) -> dict:
+                  tiktok_cur=None, tiktok_prev=None, linkedin_cur=None, linkedin_prev=None) -> dict:
     """Gasto do periodo por plataforma + total, com variacao vs periodo anterior.
     O bucket 'tiktok' so entra quando ha dados TikTok no escopo."""
     eg = pd.DataFrame(columns=["impressions", "clicks", "cost", "conversions", "conversion_value"])
@@ -862,11 +874,16 @@ def _investimento(meta_cur, google_cur, meta_prev, google_prev,
     has_tk = tiktok_cur is not None and not tiktok_cur.empty
     tik_a = sp(em, eg, tiktok_cur) if has_tk else 0.0
     tik_p = sp(em, eg, tiktok_prev) if (tiktok_prev is not None and not tiktok_prev.empty) else 0.0
-    tot_a = round(meta_a + goog_a + tik_a, 2)
-    tot_p = round(meta_p + goog_p + tik_p, 2)
+    has_li = linkedin_cur is not None and not linkedin_cur.empty
+    lin_a = sp(em, eg, linkedin_cur) if has_li else 0.0
+    lin_p = sp(em, eg, linkedin_prev) if (linkedin_prev is not None and not linkedin_prev.empty) else 0.0
+    tot_a = round(meta_a + goog_a + tik_a + lin_a, 2)
+    tot_p = round(meta_p + goog_p + tik_p + lin_p, 2)
     out = {"meta": blk(meta_a, meta_p), "google": blk(goog_a, goog_p), "total": blk(tot_a, tot_p)}
     if has_tk:
         out["tiktok"] = blk(tik_a, tik_p)
+    if has_li:
+        out["linkedin"] = blk(lin_a, lin_p)
     return out
 
 
@@ -955,6 +972,8 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
     meta, google = store.meta.copy(), store.google.copy()
     tiktok = store.tiktok.copy() if getattr(store, "tiktok", None) is not None \
         else pd.DataFrame(columns=meta.columns)
+    linkedin = store.linkedin.copy() if getattr(store, "linkedin", None) is not None \
+        else pd.DataFrame(columns=meta.columns)
     instagram = getattr(store, "instagram", None)
     instagram = instagram.copy() if instagram is not None else pd.DataFrame()
 
@@ -974,17 +993,23 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
             google = google[google["account_id"].astype(str).map(_digits).isin(google_ids)]
         if "account_id" in tiktok.columns:
             tiktok = tiktok[tiktok["account_id"].astype(str).map(_digits).isin(tiktok_ids)]
+        linkedin_ids = scope.get("linkedin_ids") or set()
+        if "account_id" in linkedin.columns:
+            linkedin = linkedin[linkedin["account_id"].astype(str).map(_digits).isin(linkedin_ids)]
 
-    contas_visiveis = sorted(set(meta["account"]).union(set(google["account"])).union(set(tiktok["account"])))
+    contas_visiveis = sorted(set(meta["account"]).union(set(google["account"]))
+                             .union(set(tiktok["account"])).union(set(linkedin["account"])))
 
     if account and account != "todas":
         meta = meta[meta["account"] == account]
         google = google[google["account"] == account]
         tiktok = tiktok[tiktok["account"] == account]
+        linkedin = linkedin[linkedin["account"] == account]
 
     # tem_tiktok controla a visibilidade da secao/opcao TikTok no front (data-driven):
     # so quando o cliente em escopo tem dados TikTok.
     tem_tiktok = not tiktok.empty
+    tem_linkedin = not linkedin.empty
     # Instagram: mesma logica — a secao so aparece p/ clientes com conta de IG vinculada.
     if scope is not None and instagram is not None and not instagram.empty:
         instagram = instagram[instagram["ig_id"].astype(str).map(_digits)
@@ -993,17 +1018,20 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
 
     # historico completo (escopo+conta), p/ ocultar metricas sem historico
     meta_all, google_all, tiktok_all = meta.copy(), google.copy(), tiktok.copy()
+    linkedin_all = linkedin.copy()
 
-    all_dates = list(meta["date"]) + list(google["date"]) + list(tiktok["date"])
+    all_dates = (list(meta["date"]) + list(google["date"]) + list(tiktok["date"])
+                 + list(linkedin["date"]))
     if not all_dates:
         # Sem dados de ANUNCIO no periodo. O Instagram e organico e independe de
         # veiculacao, entao ainda assim entregamos a secao de seguidores (ha clientes
         # com conta de IG e sem campanha ativa) — a janela usa o calendario padrao.
         _end = pd.Timestamp(today_br()) - pd.Timedelta(days=1)
         _start = _end - pd.Timedelta(days=days - 1)
-        return {"vazio": True, "tem_tiktok": tem_tiktok, "tem_instagram": tem_instagram,
+        return {"vazio": True, "tem_tiktok": tem_tiktok, "tem_linkedin": tem_linkedin,
+                "tem_instagram": tem_instagram,
                 "instagram": _instagram(instagram, scope, _start, _end),
-                "moeda": _moeda_escopo(store, (meta, google, tiktok),
+                "moeda": _moeda_escopo(store, (meta, google, tiktok, linkedin),
                                        (scope or {}).get("moeda")),
                 "filtros": {"account": account, "platform": platform, "days": days}}
 
@@ -1036,6 +1064,8 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
     meta_prev, google_prev = _window(meta, prev_start, prev_end), _window(google, prev_start, prev_end)
     tiktok_cur = _window(tiktok, start, end)
     tiktok_prev = _window(tiktok, prev_start, prev_end)
+    linkedin_cur = _window(linkedin, start, end)
+    linkedin_prev = _window(linkedin, prev_start, prev_end)
 
     if platform == "meta":
         google_cur = google_cur.iloc[0:0]; google_prev = google_prev.iloc[0:0]
@@ -1049,8 +1079,19 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         meta_cur = meta_cur.iloc[0:0]; meta_prev = meta_prev.iloc[0:0]; meta_all = meta_all.iloc[0:0]
         google_cur = google_cur.iloc[0:0]; google_prev = google_prev.iloc[0:0]; google_all = google_all.iloc[0:0]
 
-    history = M.sums(meta_all, google_all, tiktok_all)
-    blocks = _objective_blocks(meta_cur, google_cur, meta_prev, google_prev, tiktok_cur, tiktok_prev)
+    if platform in ("meta", "google", "tiktok"):
+        linkedin_cur = linkedin_cur.iloc[0:0]; linkedin_prev = linkedin_prev.iloc[0:0]
+        linkedin_all = linkedin_all.iloc[0:0]
+    elif platform == "linkedin":
+        meta_cur = meta_cur.iloc[0:0]; meta_prev = meta_prev.iloc[0:0]; meta_all = meta_all.iloc[0:0]
+        google_cur = google_cur.iloc[0:0]; google_prev = google_prev.iloc[0:0]; google_all = google_all.iloc[0:0]
+        tiktok_cur = tiktok_cur.iloc[0:0]; tiktok_prev = tiktok_prev.iloc[0:0]; tiktok_all = tiktok_all.iloc[0:0]
+
+    # Nas SOMAS, TikTok + LinkedIn ocupam juntos o slot "tiktok" (mesmo schema, mesma conta).
+    extra_cur, extra_prev = _junta(tiktok_cur, linkedin_cur), _junta(tiktok_prev, linkedin_prev)
+    extra_all = _junta(tiktok_all, linkedin_all)
+    history = M.sums(meta_all, google_all, extra_all)
+    blocks = _objective_blocks(meta_cur, google_cur, meta_prev, google_prev, extra_cur, extra_prev)
 
     # "Visitas ao Instagram": alem das metricas de Ads, mostra os SEGUIDORES ganhos.
     # ATENCAO: a API de Ads da Meta NAO expoe "seguidores" por campanha (o numero que
@@ -1082,9 +1123,10 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
     payload = {
         "vazio": False,
         "tem_tiktok": tem_tiktok,
+        "tem_linkedin": tem_linkedin,
         "tem_instagram": tem_instagram,
         "instagram": ig_payload,
-        "moeda": _moeda_escopo(store, (meta_cur, google_cur, tiktok_cur),
+        "moeda": _moeda_escopo(store, (meta_cur, google_cur, tiktok_cur, linkedin_cur),
                                (scope or {}).get("moeda")),
         "filtros": {"account": account, "platform": platform, "days": days},
         "periodo": {
@@ -1092,25 +1134,26 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
             "anterior_inicio": _fmt_date(prev_start), "anterior_fim": _fmt_date(prev_end),
         },
         "contas": contas_visiveis,
-        "funil": _funnel(meta_cur, google_cur, tiktok_cur, ig_cur,
+        "funil": _funnel(meta_cur, google_cur, extra_cur, ig_cur,
                          (scope or {}).get("funil_ordem")),
-        "investimento": _investimento(meta_cur, google_cur, meta_prev, google_prev, tiktok_cur, tiktok_prev),
+        "investimento": _investimento(meta_cur, google_cur, meta_prev, google_prev, tiktok_cur, tiktok_prev,
+                                      linkedin_cur, linkedin_prev),
         "blocos_objetivo": blocks,
-        "serie_temporal": _time_series(meta_cur, google_cur, tiktok_cur, start, end),
+        "serie_temporal": _time_series(meta_cur, google_cur, extra_cur, start, end),
         "melhores_anuncios": _best_ads(meta_cur),
         "palavras_chave": _keywords(google_cur),
-        "campanhas": _campaigns(meta_cur, google_cur, tiktok_cur),
+        "campanhas": _campaigns(meta_cur, google_cur, tiktok_cur, linkedin_cur),
         "conjuntos": _ad_sets(meta_cur, google_cur, tiktok_cur),
-        "anuncios": _ads(meta_cur, tiktok_cur),
+        "anuncios": _ads(meta_cur, tiktok_cur, linkedin_cur),
         "geo": _geo(store.geo, scope, start, end, "estado"),
         "geo_cidades": _geo(store.geo, scope, start, end, "cidade"),
         "demografia": _demographics(getattr(store, "demo", None), scope, start, end, platform),
         "canais": _canais(getattr(store, "canais", None), scope, start, end, platform),
         "seguidores_manuais": _seguidores_manuais(
             _registro_seguidores((scope or {}).get("cliente_key")), start, end),
-        "comparativo_plataforma": _platform_comparison(meta_cur, google_cur, tiktok_cur),
+        "comparativo_plataforma": _platform_comparison(meta_cur, google_cur, tiktok_cur, linkedin_cur),
         "comparativo_periodo": _period_comparison(meta_cur, google_cur, meta_prev, google_prev,
-                                                  history, tiktok_cur, tiktok_prev),
+                                                  history, extra_cur, extra_prev),
     }
     # Secao dedicada do TikTok (so quando o cliente tem TikTok).
     if tem_tiktok:

@@ -175,6 +175,7 @@ tbody tr:hover { background: var(--panel-2); }
 .invest-card.iv-meta { border-left-color: #5b8cff; }
 .invest-card.iv-google { border-left-color: #2ecc8f; }
 .invest-card.iv-tiktok { border-left-color: #ff4d67; }
+.invest-card.iv-linkedin { border-left-color: #0a66c2; }
 .invest-card.iv-total { border-left-color: #ffb547; background: rgba(255,181,71,.06); }
 .iv-label { color: var(--muted); font-size: 12px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .3px; }

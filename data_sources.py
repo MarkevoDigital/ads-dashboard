@@ -82,6 +82,9 @@ NUMERIC_CANAIS = ["impressions", "clicks", "conversions", "spend"]
 # clientes com tiktok_advertiser_ids; senao fica vazio e o TikTok nao aparece.
 TIKTOK_COLUMNS = META_COLUMNS
 NUMERIC_TIKTOK = NUMERIC_META
+# LinkedIn tambem entra no schema do Meta (connectors/linkedin_api.py monta as linhas).
+LINKEDIN_COLUMNS = META_COLUMNS
+NUMERIC_LINKEDIN = NUMERIC_META
 
 # Instagram (organico): seguidores por conta e por dia. Vem da Instagram Graph API
 # com o MESMO token do Meta Ads (escopos instagram_basic/instagram_manage_insights).
@@ -131,6 +134,7 @@ def apply_env_overrides(cfg: dict) -> dict:
     cfg.setdefault("api", {}).setdefault("meta", {})
     cfg["api"].setdefault("google_ads", {})
     cfg["api"].setdefault("tiktok", {})
+    cfg["api"].setdefault("linkedin", {})
     cfg.setdefault("google_sheets", {})
     cfg.setdefault("auth", {})
     cfg.setdefault("cron", {})
@@ -173,6 +177,12 @@ def apply_env_overrides(cfg: dict) -> dict:
         tk["advertiser_ids"] = _split(e["TIKTOK_ADVERTISER_IDS"])
     if e.get("TIKTOK_API_VERSION"):
         tk["api_version"] = e["TIKTOK_API_VERSION"]
+
+    # LinkedIn: o token OAuth fica em linkedin_token.json (connectors/linkedin_auth.py);
+    # aqui so as contas de anuncio que o deploy coleta.
+    li = cfg["api"]["linkedin"]
+    if e.get("LINKEDIN_ACCOUNT_IDS"):
+        li["account_ids"] = _split(e["LINKEDIN_ACCOUNT_IDS"])
 
     gs = cfg["google_sheets"]
     if e.get("META_CSV_URL"):
@@ -219,6 +229,8 @@ def load_clients() -> dict:
         c["_google_ids"] = {only_digits(x) for x in c.get("google_customer_ids", []) if x}
         # TikTok: so clientes com tiktok_advertiser_ids veem dados/secao TikTok.
         c["_tiktok_ids"] = {only_digits(x) for x in c.get("tiktok_advertiser_ids", []) if x}
+        # LinkedIn: so clientes com linkedin_account_ids veem dados/opcao LinkedIn.
+        c["_linkedin_ids"] = {only_digits(x) for x in c.get("linkedin_account_ids", []) if x}
         # Instagram: so clientes com instagram_ids veem a secao de seguidores.
         c["_instagram_ids"] = {only_digits(x) for x in c.get("instagram_ids", []) if x}
         # Idioma da interface ("pt" padrao, "en" para clientes internacionais) e
@@ -551,6 +563,7 @@ class DataStore:
         self.meta = pd.DataFrame(columns=META_COLUMNS)
         self.google = pd.DataFrame(columns=GOOGLE_COLUMNS)
         self.tiktok = pd.DataFrame(columns=TIKTOK_COLUMNS)
+        self.linkedin = pd.DataFrame(columns=LINKEDIN_COLUMNS)
         self.instagram = pd.DataFrame(columns=INSTAGRAM_COLUMNS)
         self.geo = pd.DataFrame(columns=GEO_COLUMNS)
         self.demo = pd.DataFrame(columns=DEMO_COLUMNS)
@@ -569,6 +582,9 @@ class DataStore:
             self.google = _coerce(google_df, GOOGLE_COLUMNS, NUMERIC_GOOGLE)
             self.tiktok = _coerce(tiktok_df, TIKTOK_COLUMNS, NUMERIC_TIKTOK)
             self.instagram = _coerce(self._load_instagram(label), INSTAGRAM_COLUMNS, NUMERIC_INSTAGRAM)
+            self.linkedin = _coerce(self._load_linkedin(label), LINKEDIN_COLUMNS, NUMERIC_LINKEDIN)
+            if not self.linkedin.empty and "LinkedIn" not in label:
+                label = label.replace(" Ads)", " + LinkedIn Ads)")
             self.geo = _coerce_geo(geo_df)
             self.demo = _coerce(demo_df, DEMO_COLUMNS, NUMERIC_DEMO)
             self.canais = _coerce(canais_df, CANAIS_COLUMNS, NUMERIC_CANAIS)
@@ -582,6 +598,7 @@ class DataStore:
             "meta_rows": len(self.meta),
             "google_rows": len(self.google),
             "tiktok_rows": len(self.tiktok),
+            "linkedin_rows": len(self.linkedin),
             "instagram_rows": len(self.instagram),
             "demo_rows": len(self.demo),
             "canais_rows": len(self.canais),
@@ -612,12 +629,33 @@ class DataStore:
             print(f"[instagram] fetch falhou (ignorado): {exc}")
             return pd.DataFrame(columns=INSTAGRAM_COLUMNS)
 
+    def _load_linkedin(self, label: str) -> pd.DataFrame:
+        """LinkedIn Ads: so com contas em LINKEDIN_ACCOUNT_IDS e token OAuth valido.
+        Best-effort, no molde do Instagram: nao derruba o refresh. Se a API falhar,
+        MANTEM o que ja havia no store em vez de gravar vazio por cima."""
+        vazio = pd.DataFrame(columns=LINKEDIN_COLUMNS)
+        cfg = self.config.get("api", {}).get("linkedin", {})
+        if label == "Dados de exemplo" or not cfg.get("account_ids"):
+            return vazio
+        try:
+            from connectors import linkedin_api
+            dias = int(self.config.get("api", {}).get("dias_busca", 60))
+            df = linkedin_api.fetch(cfg, dias)
+            print(f"[linkedin] {len(df)} linha(s) coletada(s)")
+            return df if not df.empty else vazio
+        except Exception as exc:  # noqa: BLE001
+            print(f"[linkedin] fetch falhou, mantendo dados anteriores: {exc}")
+            return self.linkedin if getattr(self, "linkedin", None) is not None else vazio
+
     def _ids_configurados(self) -> set:
         """IDs de conta fixados no deploy (env/config). Vazio = descoberta automatica."""
         api = self.config.get("api", {})
         ids = set()
         for chave, campo in (("meta", "ad_account_ids"), ("google_ads", "customer_ids"),
                              ("tiktok", "advertiser_ids")):
+            # LinkedIn fica de fora: sua lista e SEMPRE fixa (nao ha descoberta), entao
+            # entrar aqui transformaria um deploy em descoberta automatica num "restrito"
+            # e apagaria as moedas de Meta/Google. linkedin_api.currencies ja se limita a ela.
             for x in (api.get(chave, {}).get(campo) or []):
                 d = only_digits(x)
                 if d:
@@ -644,6 +682,14 @@ class DataStore:
         alvo = self._ids_configurados()
         if alvo:
             out = {k: v for k, v in out.items() if k in alvo}
+        # LinkedIn depois do filtro: currencies() so consulta as contas de LINKEDIN_ACCOUNT_IDS.
+        if api.get("linkedin", {}).get("account_ids"):
+            try:
+                from connectors import linkedin_api
+                out.update({only_digits(k): v for k, v in (linkedin_api.currencies(api["linkedin"]) or {}).items()
+                            if only_digits(k)})
+            except Exception as exc:  # noqa: BLE001
+                print(f"[linkedin] moedas indisponiveis: {exc}")
         if out:
             print(f"[moedas] {len(out)} conta(s) mapeada(s): {sorted(set(out.values()))}")
         return out
@@ -657,6 +703,7 @@ class DataStore:
             with open(tmp, "wb") as fh:
                 pickle.dump({
                     "meta": self.meta, "google": self.google, "tiktok": self.tiktok,
+                    "linkedin": self.linkedin,
                     "instagram": self.instagram, "geo": self.geo, "demo": self.demo,
                     "canais": self.canais,
                     "moedas": self.moedas,
@@ -686,6 +733,9 @@ class DataStore:
                 # retrocompat: pickles antigos (pre-TikTok) nao tem a chave 'tiktok'
                 tk = data.get("tiktok")
                 self.tiktok = tk if tk is not None else pd.DataFrame(columns=TIKTOK_COLUMNS)
+                # retrocompat: pickles anteriores ao LinkedIn nao tem a chave
+                lk = data.get("linkedin")
+                self.linkedin = lk if lk is not None else pd.DataFrame(columns=LINKEDIN_COLUMNS)
                 # retrocompat: pickles anteriores ao Instagram nao tem a chave
                 ig = data.get("instagram")
                 self.instagram = ig if ig is not None else pd.DataFrame(columns=INSTAGRAM_COLUMNS)

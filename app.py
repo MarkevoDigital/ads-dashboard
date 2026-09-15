@@ -172,6 +172,7 @@ def _build_users():
             "scope": {"meta_ids": c.get("_meta_ids", set()),
                       "google_ids": c.get("_google_ids", set()),
                       "tiktok_ids": c.get("_tiktok_ids", set()),
+                      "linkedin_ids": c.get("_linkedin_ids", set()),
                       "instagram_ids": c.get("_instagram_ids", set()),
                       "leads_form_only": bool(c.get("leads_form_only", False)),
                       "moeda": c.get("_moeda"),
@@ -186,12 +187,12 @@ def _build_users():
     for a in clients.get("agencias", []):
         subs = [k for k in a.get("clientes", [])
                 if users.get(k, {}).get("scope") is not None]
-        uniao = {"meta_ids": set(), "google_ids": set(), "tiktok_ids": set(),
+        uniao = {"meta_ids": set(), "google_ids": set(), "tiktok_ids": set(), "linkedin_ids": set(),
                  "instagram_ids": set(), "leads_form_only": False,
                  "moeda": a.get("_moeda")}
         for k in subs:
             sc = users[k]["scope"]
-            for campo in ("meta_ids", "google_ids", "tiktok_ids", "instagram_ids"):
+            for campo in ("meta_ids", "google_ids", "tiktok_ids", "linkedin_ids", "instagram_ids"):
                 uniao[campo] |= set(sc.get(campo) or ())
         users[a["key"]] = {
             "senha": a.get("senha", ""),

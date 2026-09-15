@@ -30,6 +30,7 @@
     "Somente Meta": "Meta only",
     "Somente Google": "Google only",
     "Somente TikTok": "TikTok only",
+    "Somente LinkedIn": "LinkedIn only",
     "Período": "Date range",
     "Últimos 7 dias": "Last 7 days",
     "Últimos 14 dias": "Last 14 days",
@@ -342,7 +343,7 @@
     renderAds(data.anuncios);
     // TikTok: opção no seletor de plataforma + seção dedicada (data-driven: só p/ clientes
     // com TikTok). ensurePlatformOption insere/remove a opção conforme tem_tiktok.
-    ensurePlatformOption(!!data.tem_tiktok);
+    ensurePlatformOption(!!data.tem_tiktok, !!data.tem_linkedin);
     const plat = (data.filtros || {}).platform;
     // Melhores anúncios (Meta) e Anúncios veiculados: ocultar em "Somente Google".
     // Em "Somente TikTok" os melhores do Meta somem; a tabela de anúncios mostra TikTok.
@@ -352,7 +353,7 @@
     // campanha e não sobrar linha, a seção continua visível (senão ele não conseguiria
     // desfazer o filtro).
     $("best-ads-section").classList.toggle("hidden",
-      plat === "google" || plat === "tiktok" || !(data.melhores_anuncios || []).length);
+      plat === "google" || plat === "tiktok" || plat === "linkedin" || !(data.melhores_anuncios || []).length);
     $("ads-table-section").classList.toggle("hidden",
       plat === "google" || !(data.anuncios || []).length);
     renderTikTok(data, plat);
@@ -530,27 +531,30 @@
     wrap.innerHTML = card("Meta Ads", "iv-meta", inv.meta)
       + card("Google Ads", "iv-google", inv.google)
       + (inv.tiktok ? card("TikTok Ads", "iv-tiktok", inv.tiktok) : "")
+      + (inv.linkedin ? card("LinkedIn Ads", "iv-linkedin", inv.linkedin) : "")
       + card("Total", "iv-total", inv.total);
   }
 
   // ---- TikTok: opção de plataforma (insere/remove conforme o cliente tem TikTok) ----
-  function ensurePlatformOption(hasTikTok) {
+  // Opções "Somente TikTok" / "Somente LinkedIn" só existem para quem tem a plataforma.
+  function ensurePlatformOption(hasTikTok, hasLinkedIn) {
     const sel = $("f-platform");
     const combined = sel.querySelector('option[value="todas"]');
-    let opt = sel.querySelector('option[value="tiktok"]');
-    if (hasTikTok) {
-      if (combined) combined.textContent = "Meta + Google + TikTok";
-      if (!opt) {
+    const garante = (valor, texto, tem) => {
+      let opt = sel.querySelector(`option[value="${valor}"]`);
+      if (tem && !opt) {
         opt = document.createElement("option");
-        opt.value = "tiktok"; opt.textContent = "Somente TikTok";
+        opt.value = valor; opt.textContent = T(texto);
         sel.appendChild(opt);
-      }
-    } else {
-      if (combined) combined.textContent = "Meta + Google";
-      if (opt) {
-        if (sel.value === "tiktok") { sel.value = "todas"; }
+      } else if (!tem && opt) {
+        if (sel.value === valor) { sel.value = "todas"; }
         opt.remove();
       }
+    };
+    garante("tiktok", "Somente TikTok", hasTikTok);
+    garante("linkedin", "Somente LinkedIn", hasLinkedIn);
+    if (combined) {
+      combined.textContent = ["Meta", "Google"].concat(hasTikTok ? ["TikTok"] : [], hasLinkedIn ? ["LinkedIn"] : []).join(" + ");
     }
   }
 
@@ -559,7 +563,7 @@
     const sec = $("tiktok-section");
     const tk = data.tiktok;
     // Mostra só quando o cliente tem TikTok e o filtro não está em Meta/Google.
-    if (!data.tem_tiktok || !tk || plat === "meta" || plat === "google") {
+    if (!data.tem_tiktok || !tk || plat === "meta" || plat === "google" || plat === "linkedin") {
       sec.classList.add("hidden"); return;
     }
     sec.classList.remove("hidden");
@@ -806,10 +810,11 @@
   // ---- Comparativo de plataforma ----
   function renderPlatform(cp) {
     if (!cp) return;
-    const m = cp.meta, g = cp.google, t = cp.tiktok;  // t presente só quando há TikTok
-    const th = `<th>Meta</th><th>Google</th>${t ? "<th>TikTok</th>" : ""}`;
+    // t / l presentes só quando o cliente tem TikTok / LinkedIn no período
+    const m = cp.meta, g = cp.google, t = cp.tiktok, l = cp.linkedin;
+    const th = `<th>Meta</th><th>Google</th>${t ? "<th>TikTok</th>" : ""}${l ? "<th>LinkedIn</th>" : ""}`;
     const cells = (key, kind) => `<td>${fmt(m[key], kind)}</td><td>${fmt(g[key], kind)}</td>` +
-      (t ? `<td>${fmt(t[key], kind)}</td>` : "");
+      (t ? `<td>${fmt(t[key], kind)}</td>` : "") + (l ? `<td>${fmt(l[key], kind)}</td>` : "");
     $("platform-table").innerHTML = `<table>
       <thead><tr><th>${T("Métrica")}</th>${th}</tr></thead><tbody>
         <tr><td>${T("Investimento")}</td>${cells("spend", "currency")}</tr>
@@ -824,6 +829,7 @@
       { label: "Google", data: [g.spend, g.clicks, g.conversions], backgroundColor: "#2ecc8f" },
     ];
     if (t) datasets.push({ label: "TikTok", data: [t.spend, t.clicks, t.conversions], backgroundColor: "#ff4d67" });
+    if (l) datasets.push({ label: "LinkedIn", data: [l.spend, l.clicks, l.conversions], backgroundColor: "#0a66c2" });
     platformChart = new Chart(ctx, {
       type: "bar",
       data: { labels: [T("Investimento"), T("Cliques"), T("Conversões")], datasets },

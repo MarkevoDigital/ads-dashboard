@@ -61,3 +61,11 @@ print("\nFUNIL:", [(s["label"], s["value"]) for s in p["funil"]["stages"]])
 print("TAXAS:", [(r["label"], r["value"]) for r in p["funil"]["rates"]])
 for b in p.get("blocos_objetivo", []):
     print("BLOCO", b["objective"], "|", [(k["key"], k["value"]) for k in b["cards"]])
+ig = p.get("instagram") or {}
+print("INSTAGRAM tem:", p.get("tem_instagram"), "| total:", ig.get("total"), "| novos:", ig.get("novos"),
+      "| contas:", [c.get("username") for c in ig.get("contas", [])])
+print("BLOCOS POR PLATAFORMA:", {k: [b["objective"] for b in v]
+                                 for k, v in (p.get("blocos_objetivo_plataforma") or {}).items()})
+print("MELHORES:", {"meta": len(p.get("melhores_anuncios") or []),
+                    "tiktok": len((p.get("tiktok") or {}).get("melhores_anuncios") or []),
+                    "linkedin": len(p.get("melhores_anuncios_linkedin") or [])})

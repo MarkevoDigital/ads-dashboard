@@ -30,3 +30,6 @@ tmp/*.pkl
 
 # Seguidores anotados a mao (dado por deploy)
 seguidores_manuais.json
+
+# Tokens OAuth do LinkedIn (por deploy)
+linkedin_token.json

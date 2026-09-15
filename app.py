@@ -44,7 +44,7 @@ for _stream in (sys.stdout, sys.stderr):
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.triggers.cron import CronTrigger
-from flask import Flask, Response, g, jsonify, render_template, request
+from flask import Flask, Response, g, jsonify, redirect, render_template, request
 
 import analytics
 import commentary
@@ -331,6 +331,48 @@ def logout():
                         {"Content-Type": "text/html"})
     return Response("Sessão encerrada.", 401,
                     {"WWW-Authenticate": 'Basic realm="Dashboard de Ads"'})
+
+
+# ----------------------------------------------------------------------------
+# LinkedIn Ads: autorizacao OAuth (uma vez por ano)
+# ----------------------------------------------------------------------------
+def _pagina_linkedin(titulo, texto, status=200):
+    import html as _html
+    corpo = (f'<!doctype html><meta charset="utf-8"><title>{_html.escape(titulo)}</title>'
+             f'<body style="font-family:Arial,sans-serif;max-width:560px;margin:60px auto;color:#222">'
+             f'<h2>{_html.escape(titulo)}</h2><p>{_html.escape(texto)}</p></body>')
+    return Response(corpo, status, {"Content-Type": "text/html; charset=utf-8"})
+
+
+@app.route("/linkedin/conectar")
+@requires_auth
+def linkedin_conectar():
+    """So o login admin inicia a autorizacao: ela vale para o deploy inteiro."""
+    if (g.client or {}).get("scope") is not None:
+        return _pagina_linkedin("Acesso restrito", "Somente o login admin pode conectar o LinkedIn.", 403)
+    from connectors import linkedin_auth
+    try:
+        return redirect(linkedin_auth.url_autorizacao())
+    except RuntimeError as exc:
+        return _pagina_linkedin("LinkedIn não configurado", str(exc), 500)
+
+
+@app.route("/linkedin/callback")
+def linkedin_callback():
+    """Sem basic-auth de proposito: quem chega aqui e o redirecionamento do LinkedIn.
+    A protecao e o `state` de uso unico gravado pelo /linkedin/conectar."""
+    from connectors import linkedin_auth
+    if request.args.get("error"):
+        return _pagina_linkedin("Autorização não concluída",
+                                request.args.get("error_description") or request.args.get("error"), 400)
+    try:
+        linkedin_auth.troca_codigo(request.args.get("code", ""), request.args.get("state", ""))
+    except PermissionError:
+        return _pagina_linkedin("Link expirado", "Abra /linkedin/conectar de novo para gerar outra autorização.", 401)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[linkedin] callback falhou: {exc}")
+        return _pagina_linkedin("Falha ao conectar", "O LinkedIn recusou a troca do código. Tente de novo.", 502)
+    return _pagina_linkedin("LinkedIn conectado", "O dashboard já pode ler os anúncios. Pode fechar esta aba.")
 
 
 @app.route("/api/data")

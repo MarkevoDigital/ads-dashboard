@@ -318,8 +318,19 @@ def _time_series(meta_cur, google_cur, tiktok_cur=None, start=None, end=None) ->
 # ----------------------------------------------------------------------------
 # Melhores anuncios
 # ----------------------------------------------------------------------------
-def _best_ads(meta_cur, limit=6) -> list[dict]:
-    if meta_cur.empty:
+# LinkedIn so roda alcance e engajamento, e a API dele NAO informa alcance por dia
+# (reach vem 0). O destaque de alcance usa entao impressoes + CPM; engajamento ja usa
+# engajamentos + custo por engajamento, que o LinkedIn entrega.
+_DESTAQUE_LINKEDIN = {
+    "alcance": ("impressions", "cpm"),
+    "engajamento": ("engagement", "cost_per_engagement"),
+}
+
+
+def _best_ads(meta_cur, limit=6, destaque=None) -> list[dict]:
+    """destaque: {objetivo: (metrica_resultado, metrica_eficiencia)} para plataformas
+    cujo resultado padrao do objetivo nao existe na API (ex.: alcance no LinkedIn)."""
+    if meta_cur is None or meta_cur.empty:
         return []
     total_spend = meta_cur["spend"].sum()
     min_spend = max(total_spend * 0.01, 20)
@@ -341,7 +352,7 @@ def _best_ads(meta_cur, limit=6) -> list[dict]:
         link = links[0] if links else ""
         cfg = M.objective_config(obj)
         # HEROI = numero de resultados do objetivo (conversoes/leads/conversas/views/...)
-        result_key = cfg["conv_key"]
+        result_key, eff_key = (destaque or {}).get(obj, (cfg["conv_key"], cfg["best_ad_metric"]))
         result_spec = M.KPI_CATALOG[result_key]
         result_value = M.kpi_value(g, empty, result_key)
         # Sem resultado nao e destaque: o anuncio so lidera porque a lista ordena por
@@ -350,7 +361,6 @@ def _best_ads(meta_cur, limit=6) -> list[dict]:
         if result_value <= 0:
             continue
         # SECUNDARIA = eficiencia por resultado (custo por resultado / ROAS do objetivo)
-        eff_key = cfg["best_ad_metric"]
         eff_spec = M.KPI_CATALOG[eff_key]
         eff_value = M.kpi_value(g, empty, eff_key)
         rows.append({
@@ -1168,7 +1178,7 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         "blocos_objetivo_plataforma": blocos_plataforma,
         "serie_temporal": _time_series(meta_cur, google_cur, extra_cur, start, end),
         "melhores_anuncios": _best_ads(meta_cur),
-        "melhores_anuncios_linkedin": _best_ads(linkedin_cur),
+        "melhores_anuncios_linkedin": _best_ads(linkedin_cur, destaque=_DESTAQUE_LINKEDIN),
         "palavras_chave": _keywords(google_cur),
         "campanhas": _campaigns(meta_cur, google_cur, tiktok_cur, linkedin_cur),
         "conjuntos": _ad_sets(meta_cur, google_cur, tiktok_cur),

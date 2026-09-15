@@ -91,11 +91,25 @@
       <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
     </section>
 
-    <!-- Campanhas por plataforma (logo abaixo da Evolução diária) -->
+    <!-- Visão geral por objetivo (somada por padrão; filtro por plataforma) -->
+    <section class="card hidden" id="objective-section">
+      <div class="card-head">
+        <div>
+          <h2 data-i18n="📌 Visão geral por objetivo">📌 Visão geral por objetivo</h2>
+          <p class="hint" data-i18n="Métricas somadas de todas as plataformas; use o filtro para ver uma plataforma só.">Métricas somadas de todas as plataformas; use o filtro para ver uma plataforma só.</p>
+        </div>
+        <label class="tbl-filter hidden" id="f-obj-plat-wrap"><span data-i18n="Plataforma">Plataforma</span>
+          <select id="f-obj-plat" data-all="Todas as plataformas"><option value="">Todas as plataformas</option></select>
+        </label>
+      </div>
+      <div id="objective-blocks"></div>
+    </section>
+
+    <!-- Campanhas por plataforma -->
     <section class="card">
       <h2 data-i18n="🗂️ Campanhas por plataforma">🗂️ Campanhas por plataforma</h2>
       <p class="hint" data-i18n="Campanhas com veiculação no período filtrado.">Campanhas com veiculação no período filtrado.</p>
-      <div id="campaigns-wrap" class="table-wrap"></div>
+      <div id="campaigns-wrap"></div>
     </section>
 
     <!-- Seguidores do Instagram (aparece SÓ para clientes com conta de IG vinculada) -->
@@ -126,25 +140,15 @@
           <select id="f-adset-camp" data-all="Todas as campanhas"><option value="">Todas as campanhas</option></select>
         </label>
       </div>
-      <div id="adsets-wrap" class="table-wrap"></div>
+      <div id="adsets-wrap"></div>
     </section>
 
-    <!-- Blocos por objetivo (cards; metricas zeradas sao ocultadas) -->
-    <section id="objective-blocks"></section>
-
-    <!-- Melhores anuncios do Meta Ads -->
-    <section class="card" id="best-ads-section">
-      <h2 data-i18n="🏆 Melhores anúncios do Meta Ads">🏆 Melhores anúncios do Meta Ads</h2>
-      <p class="hint" data-i18n="Criativo destaque por objetivo (com print do anúncio).">Criativo destaque por objetivo (com print do anúncio).</p>
-      <div id="best-ads" class="ads-grid"></div>
-    </section>
-
-    <!-- Anuncios veiculados (Meta) -->
+    <!-- Anuncios veiculados (Meta, TikTok, LinkedIn) -->
     <section class="card" id="ads-table-section">
       <div class="card-head">
         <div>
           <h2 data-i18n="🖼️ Anúncios veiculados">🖼️ Anúncios veiculados</h2>
-          <p class="hint" data-i18n="Anúncios do Meta com entrega no período, agrupados por nome, campanha e conjunto.">Anúncios do Meta com entrega no período, agrupados por nome, campanha e conjunto.</p>
+          <p class="hint" data-i18n="Anúncios com entrega no período, separados por plataforma e agrupados por nome, campanha e conjunto.">Anúncios com entrega no período, separados por plataforma e agrupados por nome, campanha e conjunto.</p>
         </div>
         <div class="tbl-filters">
           <label class="tbl-filter"><span data-i18n="Campanha">Campanha</span>
@@ -155,7 +159,14 @@
           </label>
         </div>
       </div>
-      <div id="ads-wrap" class="table-wrap"></div>
+      <div id="ads-wrap"></div>
+    </section>
+
+    <!-- Melhores anúncios (Meta, TikTok, LinkedIn), logo abaixo dos anúncios veiculados -->
+    <section class="card hidden" id="best-ads-section">
+      <h2 data-i18n="🏆 Melhores anúncios">🏆 Melhores anúncios</h2>
+      <p class="hint" data-i18n="Criativo destaque por objetivo, separado por plataforma.">Criativo destaque por objetivo, separado por plataforma.</p>
+      <div id="best-ads"></div>
     </section>
 
     <!-- Seção dedicada TikTok Ads (aparece SÓ para clientes com TikTok) -->
@@ -163,8 +174,6 @@
       <h2 data-i18n="🎵 TikTok Ads">🎵 TikTok Ads</h2>
       <p class="hint" data-i18n="Desempenho do TikTok no período (também já somado aos totais e gráficos acima).">Desempenho do TikTok no período (também já somado aos totais e gráficos acima).</p>
       <div id="tiktok-kpis" class="kpi-grid tk-kpis"></div>
-      <h3 class="tk-sub" data-i18n="🏆 Melhores anúncios do TikTok">🏆 Melhores anúncios do TikTok</h3>
-      <div id="tiktok-best-ads" class="ads-grid"></div>
     </section>
 
     <div class="two-col" id="kw-platform-row">
@@ -173,7 +182,7 @@
         <div id="keywords-wrap" class="table-wrap"></div>
       </section>
       <section class="card">
-        <h2 data-i18n="⚖️ Meta x Google">⚖️ Meta x Google</h2>
+        <h2 data-i18n="⚖️ Comparativo entre plataformas">⚖️ Comparativo entre plataformas</h2>
         <div class="chart-wrap small"><canvas id="platform-chart"></canvas></div>
         <div id="platform-table" class="table-wrap"></div>
       </section>

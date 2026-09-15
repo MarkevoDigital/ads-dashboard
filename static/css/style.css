@@ -142,12 +142,40 @@ tbody tr:hover { background: var(--panel-2); }
 .delta-up { color: var(--good); }
 .delta-down { color: var(--bad); }
 
-/* Charts */
-.chart-wrap { position: relative; height: 300px; }
+/* Charts — moldura suave em volta de cada grafico, para separar cards com varios */
+.chart-wrap {
+  position: relative; height: 300px; padding: 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.015);
+}
 .chart-wrap.small { height: 220px; }
 .demo-title { font-size: 13px; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
 .demo-note { margin: -2px 0 8px; font-size: 11px; }
-.canal-bloco { min-width: 0; }
+/* Analise por canal e Publico: cada grafico (com titulo e tabela) vira um bloco
+   emoldurado; o grafico interno dispensa a segunda moldura. */
+.canal-bloco, #demo-section .two-col > div {
+  min-width: 0; padding: 2px 14px 14px;
+  border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.015);
+}
+.canal-bloco .chart-wrap, #demo-section .chart-wrap { border: 0; background: transparent; padding: 4px 0; }
+#demo-section .table-wrap { margin-top: 10px; }
+
+/* Blocos por plataforma (tabelas e melhores anuncios): borda na cor da plataforma */
+.plat-block {
+  border: 1px solid var(--line); border-left: 4px solid var(--brand); border-radius: 10px;
+  padding: 10px 12px 6px; margin-top: 12px; background: rgba(255,255,255,.012);
+}
+.plat-block:first-child { margin-top: 0; }
+.plat-block.meta { border-left-color: #5b8cff; }
+.plat-block.google { border-left-color: #2ecc8f; }
+.plat-block.tiktok { border-left-color: #ff4d67; }
+.plat-block.linkedin { border-left-color: #0a66c2; }
+.plat-block-head { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
+.plat-block-info { color: var(--muted); font-size: 12px; }
+.plat-block .ads-grid { padding-bottom: 8px; }
+
+/* Visao geral por objetivo: os blocos ficam dentro de um card com filtro */
+#objective-blocks { display: flex; flex-direction: column; gap: 12px; }
+#objective-section .obj-block { background: transparent; padding: 12px 14px; margin: 0; }
 
 /* Misc */
 .loading {
@@ -233,6 +261,7 @@ tbody tr:hover { background: var(--panel-2); }
 .plat.meta { background: #5b8cff; }
 .plat.google { background: #2ecc8f; }
 .plat.tiktok { background: #ff4d67; }
+.plat.linkedin { background: #0a66c2; }
 /* ---- Instagram (seguidores) ---- */
 #instagram-section { border-left: 4px solid #e1306c; }
 .invest-card.iv-ig { border-left-color: #e1306c; }

@@ -1108,7 +1108,11 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         ig_cur = _ig_novos(instagram, start, end)
         ig_prev = _ig_novos(instagram, prev_start, prev_end)
         d_ig = M.pct_change(ig_cur, ig_prev)
-        for b in blocks:
+
+    def _com_seguidores_ig(lista):
+        if not tem_instagram:
+            return lista
+        for b in lista:
             if b.get("objective") == "visitas_instagram":
                 b["cards"].append({
                     "key": "ig_new_followers", "label": "Novos seguidores (conta)",
@@ -1116,6 +1120,24 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
                     "prev_value": round(ig_prev, 1), "delta_pct": d_ig,
                     "good": M.is_good("up", d_ig), "is_primary": False,
                 })
+        return lista
+
+    _com_seguidores_ig(blocks)
+
+    # Os mesmos blocos por plataforma, para o filtro da visao geral (o padrao continua
+    # sendo o somado acima). Seguidores do IG so entram no bloco do Meta.
+    vazio_m, vazio_g = meta_cur.iloc[0:0], google_cur.iloc[0:0]
+    blocos_plataforma = {}
+    for nome, mc_, mp_, gc_, gp_, xc_, xp_ in (
+            ("meta", meta_cur, meta_prev, vazio_g, vazio_g, None, None),
+            ("google", vazio_m, vazio_m, google_cur, google_prev, None, None),
+            ("tiktok", vazio_m, vazio_m, vazio_g, vazio_g, tiktok_cur, tiktok_prev),
+            ("linkedin", vazio_m, vazio_m, vazio_g, vazio_g, linkedin_cur, linkedin_prev)):
+        if mc_.empty and gc_.empty and (xc_ is None or xc_.empty):
+            continue
+        bl = _objective_blocks(mc_, gc_, mp_, gp_, xc_, xp_)
+        if bl:
+            blocos_plataforma[nome] = _com_seguidores_ig(bl) if nome == "meta" else bl
 
     # Comparativo dos novos seguidores vs. periodo anterior: alimenta o comentario
     # automatico (o card do bloco de objetivo ja usa os mesmos numeros).
@@ -1143,8 +1165,10 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         "investimento": _investimento(meta_cur, google_cur, meta_prev, google_prev, tiktok_cur, tiktok_prev,
                                       linkedin_cur, linkedin_prev),
         "blocos_objetivo": blocks,
+        "blocos_objetivo_plataforma": blocos_plataforma,
         "serie_temporal": _time_series(meta_cur, google_cur, extra_cur, start, end),
         "melhores_anuncios": _best_ads(meta_cur),
+        "melhores_anuncios_linkedin": _best_ads(linkedin_cur),
         "palavras_chave": _keywords(google_cur),
         "campanhas": _campaigns(meta_cur, google_cur, tiktok_cur, linkedin_cur),
         "conjuntos": _ad_sets(meta_cur, google_cur, tiktok_cur),

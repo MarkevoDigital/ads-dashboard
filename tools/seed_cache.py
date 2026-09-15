@@ -49,3 +49,10 @@ info = store.refresh()
 ok = os.path.exists(STORE_CACHE)
 size = os.path.getsize(STORE_CACHE) if ok else 0
 print("SEEDED", info, "| pickle?", ok, "| bytes", size, "| path", STORE_CACHE)
+
+# Seguidores das Paginas LinkedIn dos clientes (1 medicao por dia, via cron do seed).
+try:
+    from data_sources import atualiza_seguidores_linkedin
+    print("SEGUIDORES_LINKEDIN", atualiza_seguidores_linkedin())
+except Exception as exc:  # noqa: BLE001
+    print("SEGUIDORES_LINKEDIN falhou:", exc)

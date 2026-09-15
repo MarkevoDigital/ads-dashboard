@@ -116,6 +116,47 @@ def load_seguidores_manuais() -> dict:
         return {}
 
 
+def registra_seguidores(cliente: str, numero: int, quando: str, rede: str = "LinkedIn") -> None:
+    """Grava (ou substitui) a medicao do dia de um cliente no seguidores_manuais.json.
+    Mesmo formato do tools/seguidores.py; escrita atomica."""
+    dados = load_seguidores_manuais()
+    reg = dados.setdefault(cliente, {})
+    reg.setdefault("rede", rede)
+    hist = [h for h in (reg.get("historico") or []) if str(h.get("data")) != quando]
+    hist.append({"data": quando, "seguidores": int(numero)})
+    reg["historico"] = sorted(hist, key=lambda h: str(h["data"]))
+    tmp = SEGUIDORES_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(dados, fh, ensure_ascii=False, indent=2)
+        fh.write("\n")
+    os.replace(tmp, SEGUIDORES_FILE)
+
+
+def atualiza_seguidores_linkedin() -> dict:
+    """Mede os seguidores da Pagina LinkedIn de cada cliente com `linkedin_org_id` no
+    clients.json e grava a medicao de hoje. So toca Paginas configuradas: o perfil
+    autorizado administra Paginas de outras empresas, que nunca entram aqui.
+    Best-effort: sem token ou com erro, mantem as medicoes anteriores."""
+    from connectors import linkedin_api, linkedin_auth
+    feitos = {}
+    token = linkedin_auth.access_token()
+    if not token:
+        return feitos
+    hoje = str(today_br())
+    for c in load_clients().get("clientes", []):
+        org = only_digits(c.get("linkedin_org_id") or "")
+        if not org:
+            continue
+        try:
+            n = linkedin_api.seguidores(org, token)
+            if n is not None:
+                registra_seguidores(c["key"], n, hoje)
+                feitos[c["key"]] = n
+        except Exception as exc:  # noqa: BLE001
+            print(f"[seguidores] linkedin {c['key']}: {exc}")
+    return feitos
+
+
 def load_config() -> dict:
     path = os.path.join(BASE_DIR, "config.json")
     if not os.path.exists(path):

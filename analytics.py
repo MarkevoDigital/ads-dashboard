@@ -176,6 +176,11 @@ def _funnel(meta_cur, google_cur, tiktok_cur=None, ig_novos=0.0, ordem=None) -> 
         if val > 0 or (key == "clicks" and impr > 0):
             seq.append((key, _FUNNEL_LABELS[key], val))
 
+    # Video com MENOS visualizacoes do que cliques sai do funil. Numero pequeno ali
+    # quase sempre significa que o periodo rodou com imagem, nao que o video perdeu
+    # gente: mantido, o funil mostraria uma "queda" que nao existe.
+    seq = [t for t in seq if not (t[0] == "video_views" and t[2] < round(s["clicks"]))]
+
     # Visualizacoes de video ficam logo abaixo das impressoes, em qualquer ordem
     # configurada: a taxa de visualizacao sai delas (e o CTR seguinte tambem).
     chaves = [k for k, _, _ in seq]

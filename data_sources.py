@@ -187,6 +187,15 @@ def apply_env_overrides(cfg: dict) -> dict:
         cfg["fonte_dados"] = e["FONTE_DADOS"]
     if e.get("DIAS_BUSCA"):
         cfg["api"]["dias_busca"] = int(e["DIAS_BUSCA"])
+    # Coleta incremental: a atualizacao diaria busca so os ultimos DIAS_INCREMENTAL dias
+    # e junta ao historico ja guardado, que e mantido por DIAS_HISTORICO dias. Assim o
+    # dashboard acumula meses de dados sem que cada rodada fique mais longa (e sem
+    # estourar o limite de chamadas das APIs). Zero em DIAS_INCREMENTAL desliga o
+    # incremental e volta ao comportamento antigo (busca a janela inteira toda vez).
+    if e.get("DIAS_INCREMENTAL"):
+        cfg["api"]["dias_incremental"] = int(e["DIAS_INCREMENTAL"])
+    if e.get("DIAS_HISTORICO"):
+        cfg["api"]["dias_historico"] = int(e["DIAS_HISTORICO"])
 
     m = cfg["api"]["meta"]
     if e.get("META_ACCESS_TOKEN"):
@@ -587,6 +596,30 @@ def _ensure_sample_files():
 # ----------------------------------------------------------------------------
 # Cache
 # ----------------------------------------------------------------------------
+def _merge_historico(antigo: pd.DataFrame, novo: pd.DataFrame, dias_hist: int) -> pd.DataFrame:
+    """Junta a coleta recente ao historico ja guardado.
+
+    Os dias que acabaram de ser buscados SUBSTITUEM os mesmos dias do historico (Meta e
+    Google ainda ajustam numeros dos ultimos dias, e conversao entra com atraso); o que
+    e mais antigo que a janela nova e preservado. Mantem no maximo `dias_hist` dias.
+
+    Sem historico (primeira carga) devolve a coleta nova; coleta vazia (falha de API ou
+    conta sem veiculacao) preserva o historico em vez de apagar tudo.
+    """
+    if antigo is None or antigo.empty:
+        base = novo
+    elif novo is None or novo.empty:
+        base = antigo
+    else:
+        corte = pd.to_datetime(novo["date"]).min()
+        anteriores = antigo[pd.to_datetime(antigo["date"]) < corte]
+        base = pd.concat([anteriores, novo], ignore_index=True) if len(anteriores) else novo
+    if base is None or base.empty or not dias_hist:
+        return base
+    limite = pd.Timestamp(today_br()) - pd.Timedelta(days=dias_hist)
+    return base[pd.to_datetime(base["date"]) >= limite].reset_index(drop=True)
+
+
 def _coerce_geo(df: pd.DataFrame) -> pd.DataFrame:
     for col in GEO_COLUMNS:
         if col not in df.columns:
@@ -618,19 +651,41 @@ class DataStore:
         self.source_label = "—"
         self._lock = threading.Lock()
 
-    def refresh(self) -> dict:
+    def refresh(self, dias: int | None = None) -> dict:
+        """Atualiza o store. `dias` força uma janela de busca (usado pela carga
+        inicial de historico); sem ele, a janela vem de dias_incremental e o
+        resultado e MESCLADO ao historico ja guardado."""
         with self._lock:
-            meta_df, google_df, tiktok_df, geo_df, demo_df, canais_df, label = self._load_raw()
-            self.meta = _coerce(meta_df, META_COLUMNS, NUMERIC_META)
-            self.google = _coerce(google_df, GOOGLE_COLUMNS, NUMERIC_GOOGLE)
-            self.tiktok = _coerce(tiktok_df, TIKTOK_COLUMNS, NUMERIC_TIKTOK)
-            self.instagram = _coerce(self._load_instagram(label), INSTAGRAM_COLUMNS, NUMERIC_INSTAGRAM)
-            self.linkedin = _coerce(self._load_linkedin(label), LINKEDIN_COLUMNS, NUMERIC_LINKEDIN)
+            api = self.config.get("api", {})
+            dias_hist = int(api.get("dias_historico", 180))
+            # Sem historico em memoria (primeiro seed do dia num processo novo), a
+            # janela curta deixaria buracos: so vale o incremental quando ja ha dados.
+            tem_hist = any(getattr(self, n, None) is not None and not getattr(self, n).empty
+                           for n in ("meta", "google", "tiktok"))
+            janela = dias
+            if janela is None:
+                inc = int(api.get("dias_incremental", 14))
+                janela = inc if (inc and tem_hist) else None
+
+            def junta(anterior, novo_df, colunas, numericas, geo=False):
+                novo = _coerce_geo(novo_df) if geo else _coerce(novo_df, colunas, numericas)
+                if janela is None:  # busca completa: substitui, como antes
+                    return novo
+                return _merge_historico(anterior, novo, dias_hist)
+
+            meta_df, google_df, tiktok_df, geo_df, demo_df, canais_df, label = self._load_raw(janela)
+            self.meta = junta(self.meta, meta_df, META_COLUMNS, NUMERIC_META)
+            self.google = junta(self.google, google_df, GOOGLE_COLUMNS, NUMERIC_GOOGLE)
+            self.tiktok = junta(self.tiktok, tiktok_df, TIKTOK_COLUMNS, NUMERIC_TIKTOK)
+            self.instagram = junta(self.instagram, self._load_instagram(label),
+                                   INSTAGRAM_COLUMNS, NUMERIC_INSTAGRAM)
+            self.linkedin = junta(self.linkedin, self._load_linkedin(label),
+                                  LINKEDIN_COLUMNS, NUMERIC_LINKEDIN)
             if not self.linkedin.empty and "LinkedIn" not in label:
                 label = label.replace(" Ads)", " + LinkedIn Ads)")
-            self.geo = _coerce_geo(geo_df)
-            self.demo = _coerce(demo_df, DEMO_COLUMNS, NUMERIC_DEMO)
-            self.canais = _coerce(canais_df, CANAIS_COLUMNS, NUMERIC_CANAIS)
+            self.geo = junta(self.geo, geo_df, GEO_COLUMNS, NUMERIC_GEO, geo=True)
+            self.demo = junta(self.demo, demo_df, DEMO_COLUMNS, NUMERIC_DEMO)
+            self.canais = junta(self.canais, canais_df, CANAIS_COLUMNS, NUMERIC_CANAIS)
             self.moedas = self._load_moedas(label)
             self.updated_at = now_br()
             self.source_label = label
@@ -798,7 +853,8 @@ class DataStore:
             print(f"[cache] falha ao carregar store: {exc}")
             return False
 
-    def _load_raw(self):
+    def _load_raw(self, dias_janela: int | None = None):
+        """`dias_janela` = janela a buscar nas APIs. None usa dias_busca (janela cheia)."""
         mode = self.config.get("fonte_dados", "auto")
         gs = self.config.get("google_sheets", {})
 
@@ -846,7 +902,8 @@ class DataStore:
         def via_api():
             from connectors import meta_api, google_api, tiktok_api
             api = self.config.get("api", {})
-            dias = int(api.get("dias_busca", 60))
+            # Janela da rodada: a incremental (curta) quando ha historico; senao a cheia.
+            dias = int(dias_janela or api.get("dias_busca", 60))
             meta_df = meta_api.fetch(api.get("meta", {}), dias)
             google_df = google_api.fetch(api.get("google_ads", {}), dias)
             # TikTok: so busca se houver access_token configurado; resiliente (nao derruba

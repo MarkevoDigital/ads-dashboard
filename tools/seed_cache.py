@@ -45,7 +45,15 @@ if os.path.exists(envp):
 from data_sources import DataStore, load_config, STORE_CACHE
 
 store = DataStore(load_config())
-info = store.refresh()
+# Carrega o historico ja gravado ANTES de atualizar: a rodada incremental busca poucos
+# dias na API e mescla com o que ja existe. Sem isto o store comecaria vazio e a janela
+# curta apagaria meses de dados. max_age alto de proposito: mesmo um cache velho serve
+# de historico (as datas recentes sao substituidas pela coleta de agora).
+store.load_cache(max_age_h=24 * 365 * 5)
+# Argumento opcional: janela em dias a buscar (carga inicial de historico).
+#   python tools/seed_cache.py 180   -> busca 180 dias de uma vez
+dias = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else None
+info = store.refresh(dias)
 ok = os.path.exists(STORE_CACHE)
 size = os.path.getsize(STORE_CACHE) if ok else 0
 print("SEEDED", info, "| pickle?", ok, "| bytes", size, "| path", STORE_CACHE)

@@ -36,6 +36,8 @@
     "Últimos 14 dias": "Last 14 days",
     "Últimos 30 dias": "Last 30 days",
     "Últimos 60 dias": "Last 60 days",
+    "Últimos 90 dias": "Last 90 days",
+    "Últimos 6 meses": "Last 6 months",
     "Por mês": "By month",
     "Personalizado…": "Custom…",
     "Datas": "Dates",

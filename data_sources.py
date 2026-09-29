@@ -46,6 +46,8 @@ GOOGLE_COLUMNS = [
     "date", "account", "account_id", "objective", "campaign", "campaign_type",
     "ad_group", "keyword", "match_type", "daily_budget", "impressions", "clicks", "cost",
     "conversions", "conversion_value", "video_views", "interactions",
+    # Conversoes de loja separadas por tipo (conversion_action_category), p/ o funil.
+    "add_to_cart", "initiate_checkout", "purchases",
 ]
 GEO_COLUMNS = [
     "date", "account_id", "platform", "level", "city", "lat", "lng", "clicks",
@@ -59,7 +61,7 @@ NUMERIC_META = [
 ]
 NUMERIC_GOOGLE = [
     "daily_budget", "impressions", "clicks", "cost", "conversions", "conversion_value",
-    "video_views", "interactions",
+    "video_views", "interactions", "add_to_cart", "initiate_checkout", "purchases",
 ]
 NUMERIC_GEO = ["lat", "lng", "clicks"]
 

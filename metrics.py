@@ -158,7 +158,9 @@ _META_NUM = ["impressions", "reach", "clicks", "link_clicks", "spend",
              "purchases", "purchase_value", "site_visits", "video_views",
              "engagement", "add_to_cart", "initiate_checkout", "registrations"]
 _GOOGLE_NUM = ["impressions", "clicks", "cost", "conversions", "conversion_value",
-               "video_views", "interactions"]
+               "video_views", "interactions",
+               # e-commerce separado por tipo de conversao (ver connectors/google_api.py)
+               "add_to_cart", "initiate_checkout", "purchases"]
 
 
 def _col(df, c):
@@ -186,10 +188,10 @@ def _sums(meta: pd.DataFrame, google: pd.DataFrame, tiktok: pd.DataFrame = None)
         "conversions": m["purchases"] + g["conversions"] + t["purchases"],
         # E-commerce: "purchases" e SO compra (Meta/TikTok), separado de "conversions",
         # que mistura as conversoes do Google — num funil de loja isso importa.
-        "purchases": m["purchases"] + t["purchases"],
-        "add_to_cart": m["add_to_cart"] + t["add_to_cart"],
+        "purchases": m["purchases"] + t["purchases"] + g["purchases"],
+        "add_to_cart": m["add_to_cart"] + t["add_to_cart"] + g["add_to_cart"],
         "registrations": m["registrations"] + t["registrations"],
-        "initiate_checkout": m["initiate_checkout"] + t["initiate_checkout"],
+        "initiate_checkout": m["initiate_checkout"] + t["initiate_checkout"] + g["initiate_checkout"],
         "revenue": m["purchase_value"] + g["conversion_value"] + t["purchase_value"],
     }
 

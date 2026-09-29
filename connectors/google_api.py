@@ -137,6 +137,15 @@ def _customer_ids(g_cfg: dict, client) -> list[str]:
     return []
 
 
+# Categoria de conversao do Google -> etapa do funil de loja. So estas tres: as demais
+# (lead, ligacao, pagina vista...) ja entram no total de conversoes.
+_ECOM_CATEGORIA = {
+    "ADD_TO_CART": "add_to_cart",
+    "BEGIN_CHECKOUT": "initiate_checkout",
+    "PURCHASE": "purchases",
+}
+
+
 def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
     if not g_cfg.get("developer_token") or not g_cfg.get("refresh_token"):
         return pd.DataFrame()
@@ -195,6 +204,15 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
         FROM asset_group
         WHERE segments.date BETWEEN '{since}' AND '{until}'
     """
+    # Conversoes por TIPO de evento (carrinho, checkout, compra). metrics.conversions vem
+    # somado; quem separa e o segmento conversion_action_category. Sem isto, uma conta que
+    # mede e-commerce no Google aparecia no funil so com o carrinho (que vinha do Meta).
+    ecom_query = f"""
+        SELECT segments.date, campaign.name, segments.conversion_action_category,
+               metrics.conversions
+        FROM campaign
+        WHERE segments.date BETWEEN '{since}' AND '{until}'
+    """
     # orcamento diario por campanha (query separada -> nao quebra o fetch principal)
     budget_query = "SELECT campaign.name, campaign_budget.amount_micros FROM campaign"
 
@@ -208,6 +226,21 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                     budget_map[row.campaign.name] = row.campaign_budget.amount_micros / 1_000_000.0
         except GoogleAdsException as exc:
             print(f"[google] orcamentos {cid}: {exc}")
+        # (campanha, dia) -> {add_to_cart, initiate_checkout, purchases}. Query propria e
+        # tolerante: se a API recusar o segmento, o resto da conta continua normal.
+        ecom_map: dict = {}
+        try:
+            for batch in service.search_stream(customer_id=cid, query=ecom_query):
+                for row in batch.results:
+                    campo = _ECOM_CATEGORIA.get(row.segments.conversion_action_category.name)
+                    if not campo:
+                        continue
+                    e = ecom_map.setdefault((row.campaign.name, row.segments.date),
+                                            {"add_to_cart": 0.0, "initiate_checkout": 0.0,
+                                             "purchases": 0.0})
+                    e[campo] += float(row.metrics.conversions)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[google] conversoes por tipo {cid}: {exc}")
         # Somas dos DETALHES por (campanha, dia) — palavras-chave (Pesquisa) e grupos de
         # recursos (PMax): usadas p/ descontar do total da campanha e nao contar 2x.
         sub_agg: dict = {}
@@ -303,6 +336,10 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                     # chave). Sem isto os totais ou duplicariam ou (como era antes, sem a
                     # campanha) ficariam ABAIXO do Google Ads, que reporta no nivel da
                     # campanha: cliques/conversoes sem palavra-chave correspondente sumiam.
+                    # Carrinho/checkout/compra do Google ficam na linha da CAMPANHA (a
+                    # quebra por tipo so existe nesse nivel), entao nao duplicam com as
+                    # linhas de palavra-chave/grupo de recursos.
+                    ec = ecom_map.get((row.campaign.name, row.segments.date), {})
                     a = sub_agg.get((row.campaign.name, row.segments.date))
                     if a:
                         impressions = max(impressions - a["impressions"], 0.0)
@@ -310,7 +347,8 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         cost = max(cost - a["cost"], 0.0)
                         conversions = max(conversions - a["conversions"], 0.0)
                         conv_value = max(conv_value - a["conversion_value"], 0.0)
-                        if not (impressions or clicks or cost or conversions or conv_value):
+                        if not (impressions or clicks or cost or conversions or conv_value
+                                or any(ec.values())):
                             continue  # nada sobrou: tudo ja veio por palavra-chave
                     rows.append({
                         "date": row.segments.date,
@@ -333,6 +371,9 @@ def fetch(g_cfg: dict, days: int = 60) -> pd.DataFrame:
                         "video_views": float(getattr(row.metrics, "video_trueview_views", 0.0) or 0.0),
                         "interactions": clicks,
                         "daily_budget": budget_map.get(row.campaign.name, 0.0),
+                        "add_to_cart": ec.get("add_to_cart", 0.0),
+                        "initiate_checkout": ec.get("initiate_checkout", 0.0),
+                        "purchases": ec.get("purchases", 0.0),
                     })
         except GoogleAdsException as exc:
             print(f"[google] erro na conta {cid}: {exc}")

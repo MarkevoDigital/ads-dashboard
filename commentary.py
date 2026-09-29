@@ -92,6 +92,29 @@ TEXTOS = {
         "kw": "🔑 Palavra-chave destaque: \"{kw}\" gerou {n} conversões a CPA de {cpa}.",
         "cidade": "📍 {cidade} liderou em cliques ({v}).",
         "estavel": "✅ Campanhas em veiculação estável no período. Acompanhe os próximos dias para identificar tendências.",
+        # Visao geral: paragrafo corrido, de leitura. Regra do cliente: nunca apontar
+        # queda de resultado nem alta de custo — as nuances entram como contexto.
+        "vg": {
+            "abre": "Entre {ini} e {fim}, o investimento foi de {gasto}, distribuído em {nc} {camp} e {na} {anun} com veiculação",
+            "campanha": ("campanha", "campanhas"),
+            "anuncio": ("anúncio", "anúncios"),
+            "ativos_todos": ", todos ativos agora",
+            "ativos_parte": ", sendo {n} ainda ativos",
+            "volume": "No total, foram {impr} impressões e {cliques} cliques, com CTR de {ctr}.",
+            "volume_simples": "No total, foram {impr} impressões e {cliques} cliques.",
+            "termos": "No Google, {n} {termo} de pesquisa {verbo} veiculação no período.",
+            "termo": ("termo", "termos"),
+            "termo_verbo": ("teve", "tiveram"),
+            "conv_menos_gasto": "As conversões somaram {v} e cresceram {d} em relação ao período anterior, mesmo com investimento menor — sinal de que a verba rendeu mais.",
+            "conv_cresceu": "As conversões somaram {v}, {d} acima do período anterior.",
+            "conv_simples": "As conversões somaram {v} no período.",
+            "cpa_melhor": "O custo por conversão ficou em {v}, abaixo do período anterior.",
+            "pausa": "Vale notar que {n} {dia} do intervalo {verbo} sem veiculação, então o resultado se concentra nos {ativos} dias em que os anúncios rodaram.",
+            "dia": ("dia", "dias"),
+            "dia_verbo": ("ficou", "ficaram"),
+            "pico": "O melhor dia foi {data}, que sozinho respondeu por {v} do investimento.",
+            "ig": "No orgânico, o Instagram ganhou {v} seguidores no mesmo intervalo.",
+        },
     },
     "en": {
         "sem_dados": "No data for the selected period on this account.",
@@ -134,8 +157,122 @@ TEXTOS = {
         "kw": "🔑 Top keyword: \"{kw}\" drove {n} conversions at a {cpa} CPA.",
         "cidade": "📍 {cidade} led in clicks ({v}).",
         "estavel": "✅ Campaigns delivered steadily in the period. Keep an eye on the coming days to spot trends.",
+        "vg": {
+            "abre": "Between {ini} and {fim}, spend reached {gasto}, spread across {nc} {camp} and {na} {anun} that delivered",
+            "campanha": ("campaign", "campaigns"),
+            "anuncio": ("ad", "ads"),
+            "ativos_todos": ", all of them still running",
+            "ativos_parte": ", {n} of them still running",
+            "volume": "All in all, that meant {impr} impressions and {cliques} clicks, at a {ctr} CTR.",
+            "volume_simples": "All in all, that meant {impr} impressions and {cliques} clicks.",
+            "termos": "On Google, {n} search {termo} {verbo} impressions in the period.",
+            "termo": ("term", "terms"),
+            "termo_verbo": ("had", "had"),
+            "conv_menos_gasto": "Conversions added up to {v} and grew {d} against the previous period, even on a smaller budget — the spend went further.",
+            "conv_cresceu": "Conversions added up to {v}, {d} above the previous period.",
+            "conv_simples": "Conversions added up to {v} in the period.",
+            "cpa_melhor": "Cost per conversion came in at {v}, below the previous period.",
+            "pausa": "Worth noting that {n} {dia} in the range {verbo} without delivery, so the results come from the {ativos} days the ads actually ran.",
+            "dia": ("day", "days"),
+            "dia_verbo": ("went", "went"),
+            "pico": "The strongest day was {data}, which alone took {v} of the spend.",
+            "ig": "On the organic side, Instagram gained {v} followers over the same range.",
+        },
     },
 }
+
+
+def _visao_geral(payload: dict, by_key: dict, T: dict, f, idioma: str) -> str:
+    """Paragrafo de leitura corrida sobre o periodo: volume, o que sustentou os numeros
+    e as nuances que ajudam a interpretar (dias sem veiculacao, conversao crescendo com
+    investimento menor, dia de pico).
+
+    Regra do cliente: NUNCA apontar ponto negativo — queda de resultado e alta de custo
+    ficam de fora. O que nao melhorou simplesmente nao vira frase."""
+    V = T.get("vg")
+    if not V:
+        return ""
+
+    def data(s):
+        """31/08 em pt, 08/31 em ingles — num paragrafo de leitura, ISO trava o texto."""
+        try:
+            a, m, d = str(s).split("-")
+        except ValueError:
+            return str(s)
+        return f"{d}/{m}" if idioma == "pt" else f"{m}/{d}"
+
+    def pct_inteiro(v):
+        base = f"{v * 100:.0f}"
+        return base + "%"
+
+    p = payload.get("periodo", {})
+    cur = lambda k: (by_key.get(k) or {}).get("current") or 0  # noqa: E731
+    dlt = lambda k: (by_key.get(k) or {}).get("delta_pct")     # noqa: E731
+
+    def plural(n, par):
+        return par[0] if n == 1 else par[1]
+
+    campanhas = payload.get("campanhas") or []
+    anuncios = payload.get("anuncios") or []
+    frases = []
+
+    abre = V["abre"].format(ini=data(p.get("inicio")), fim=data(p.get("fim")),
+                            gasto=f(cur("spend"), "currency"),
+                            nc=f(len(campanhas), "int"), camp=plural(len(campanhas), V["campanha"]),
+                            na=f(len(anuncios), "int"), anun=plural(len(anuncios), V["anuncio"]))
+    ativos = sum(1 for a in anuncios if a.get("ativo"))
+    if anuncios and ativos == len(anuncios):
+        abre += V["ativos_todos"]
+    elif ativos:
+        abre += V["ativos_parte"].format(n=f(ativos, "int"))
+    frases.append(abre + ".")
+
+    impr, cliques, ctr = cur("impressions"), cur("clicks"), cur("ctr")
+    if impr or cliques:
+        chave = "volume" if ctr else "volume_simples"
+        frases.append(V[chave].format(impr=f(impr, "int"), cliques=f(cliques, "int"),
+                                      ctr=f(ctr, "pct")))
+
+    termos = int(payload.get("palavras_chave_total") or 0)
+    if termos:
+        frases.append(V["termos"].format(n=f(termos, "int"), termo=plural(termos, V["termo"]),
+                                         verbo=plural(termos, V["termo_verbo"])))
+
+    conv, d_conv, d_spend = cur("conversions"), dlt("conversions"), dlt("spend")
+    if conv:
+        if d_conv and d_conv >= 1 and d_spend is not None and d_spend < 0:
+            frases.append(V["conv_menos_gasto"].format(v=f(conv, "int"), d=_pct(d_conv, idioma)))
+        elif d_conv and d_conv >= 1:
+            frases.append(V["conv_cresceu"].format(v=f(conv, "int"), d=_pct(d_conv, idioma)))
+        else:
+            frases.append(V["conv_simples"].format(v=f(conv, "int")))
+    d_cpa = dlt("cpa")
+    if cur("cpa") and d_cpa is not None and d_cpa <= -1:
+        frases.append(V["cpa_melhor"].format(v=f(cur("cpa"), "currency")))
+
+    # Nuances da serie diaria: dias sem entrega e dia de pico.
+    serie = payload.get("serie_temporal") or {}
+    gastos = list(serie.get("spend") or [])
+    labels = list(serie.get("labels") or [])
+    if gastos and len(gastos) == len(labels):
+        zerados = sum(1 for v in gastos if not v)
+        rodou = len(gastos) - zerados
+        if zerados and rodou:
+            frases.append(V["pausa"].format(n=f(zerados, "int"), dia=plural(zerados, V["dia"]),
+                                            verbo=plural(zerados, V["dia_verbo"]),
+                                            ativos=f(rodou, "int")))
+        total = sum(gastos)
+        if total > 0 and rodou > 2:
+            i = gastos.index(max(gastos))
+            fatia = gastos[i] / total
+            if fatia >= 0.2:
+                frases.append(V["pico"].format(data=data(labels[i]), v=pct_inteiro(fatia)))
+
+    ig = payload.get("instagram") or {}
+    if int(ig.get("novos") or 0) > 0:
+        frases.append(V["ig"].format(v=f(ig["novos"], "int")))
+
+    return " ".join(frases)
 
 
 def _ig_destaque(ig: dict, T: dict, sim: str, idioma: str) -> str:
@@ -329,4 +466,5 @@ def generate(payload: dict, idioma: str = "pt") -> dict:
     if not destaques:
         destaques.append(T["estavel"])
 
-    return {"resumo": resumo, "destaques": destaques}
+    return {"resumo": resumo, "visao_geral": _visao_geral(payload, by_key, T, f, idioma),
+            "destaques": destaques}

@@ -49,6 +49,7 @@
     "Relatório de Tráfego Pago": "Paid Media Report",
     "🔻 Funil de resultados": "🔻 Results funnel",
     "🧠 Análise de dados": "🧠 Data analysis",
+    "Visão geral": "Overview",
     "💰 Investimento": "💰 Spend",
     "📈 Evolução diária": "📈 Daily trend",
     "🗂️ Campanhas por plataforma": "🗂️ Campaigns by platform",
@@ -603,7 +604,10 @@
     const wrap = $("comments");
     if (!c) { wrap.innerHTML = ""; return; }
     const bullets = (c.destaques || []).map((d) => `<li>${d}</li>`).join("");
-    wrap.innerHTML = `<p class="cm-resumo">${c.resumo || ""}</p><ul class="cm-list">${bullets}</ul>`;
+    // Visão geral: parágrafo corrido sobre o período, antes dos destaques em tópicos.
+    const visao = c.visao_geral
+      ? `<div class="cm-visao"><h3>${T("Visão geral")}</h3><p>${c.visao_geral}</p></div>` : "";
+    wrap.innerHTML = `<p class="cm-resumo">${c.resumo || ""}</p>${visao}<ul class="cm-list">${bullets}</ul>`;
   }
 
   // ---- Visão geral por objetivo: somada por padrão, com filtro por plataforma ----

@@ -396,6 +396,15 @@ def _best_ads(meta_cur, limit=6, destaque=None) -> list[dict]:
 # ----------------------------------------------------------------------------
 # Palavras-chave (Google)
 # ----------------------------------------------------------------------------
+def _palavras_chave_total(google_cur) -> int:
+    """Quantos termos de pesquisa DIFERENTES tiveram veiculacao no periodo. A tabela
+    mostra so os 10 melhores; o comentario fala do total."""
+    if google_cur is None or google_cur.empty or "keyword" not in google_cur.columns:
+        return 0
+    kw = google_cur[google_cur["impressions"] > 0]["keyword"].astype(str).str.strip()
+    return int(kw[~kw.isin(["", "nan", "NaN", "None"])].nunique())
+
+
 def _keywords(google_cur, limit=10) -> list[dict]:
     if google_cur.empty:
         return []
@@ -1250,6 +1259,7 @@ def build_payload(store, account="todas", platform="todas", days=30, scope=None,
         "melhores_anuncios": _best_ads(meta_cur),
         "melhores_anuncios_linkedin": _best_ads(linkedin_cur, destaque=_DESTAQUE_LINKEDIN),
         "palavras_chave": _keywords(google_cur),
+        "palavras_chave_total": _palavras_chave_total(google_cur),
         "campanhas": _campaigns(meta_cur, google_cur, tiktok_cur, linkedin_cur),
         "conjuntos": _ad_sets(meta_cur, google_cur, tiktok_cur),
         "anuncios": _ads(meta_cur, tiktok_cur, linkedin_cur),

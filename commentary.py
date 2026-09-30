@@ -99,7 +99,9 @@ TEXTOS = {
             "campanha": ("campanha", "campanhas"),
             "anuncio": ("anúncio", "anúncios"),
             "ativos_todos": ", todos ativos agora",
-            "ativos_parte": ", sendo {n} ainda ativos",
+            "ativos_todos_um": ", ativo agora",
+            "ativos_parte": ", sendo {n} ainda {adj}",
+            "adj_ativo": ("ativo", "ativos"),
             "volume": "No total, foram {impr} impressões e {cliques} cliques, com CTR de {ctr}.",
             "volume_simples": "No total, foram {impr} impressões e {cliques} cliques.",
             "termos": "No Google, {n} {termo} de pesquisa {verbo} veiculação no período.",
@@ -114,6 +116,17 @@ TEXTOS = {
             "dia_verbo": ("ficou", "ficaram"),
             "pico": "O melhor dia foi {data}, que sozinho respondeu por {v} do investimento.",
             "ig": "No orgânico, o Instagram ganhou {v} seguidores no mesmo intervalo.",
+            # Conta sem dados por anuncio (o Google e nivel campanha): o paragrafo fala
+            # em campanhas e diz onde elas rodam, em vez de anunciar "0 anuncios".
+            "abre_camp": "Entre {ini} e {fim}, o investimento foi de {gasto}, {onde}, com {nc} {camp} em veiculação",
+            "abre_min": "Entre {ini} e {fim}, o investimento no período foi de {gasto}",
+            "onde_uma": "rodando apenas campanhas no {plat}",
+            "onde_varias": "distribuído em campanhas de {plats}",
+            "ativas_todas": ", todas ativas agora",
+            "ativas_todas_uma": ", ativa agora",
+            "ativas_parte": ", sendo {n} ainda {adj}",
+            "adj_ativa": ("ativa", "ativas"),
+            "junta": " e ",
         },
     },
     "en": {
@@ -162,7 +175,9 @@ TEXTOS = {
             "campanha": ("campaign", "campaigns"),
             "anuncio": ("ad", "ads"),
             "ativos_todos": ", all of them still running",
+            "ativos_todos_um": ", still running",
             "ativos_parte": ", {n} of them still running",
+            "adj_ativo": ("running", "running"),
             "volume": "All in all, that meant {impr} impressions and {cliques} clicks, at a {ctr} CTR.",
             "volume_simples": "All in all, that meant {impr} impressions and {cliques} clicks.",
             "termos": "On Google, {n} search {termo} {verbo} impressions in the period.",
@@ -177,6 +192,15 @@ TEXTOS = {
             "dia_verbo": ("went", "went"),
             "pico": "The strongest day was {data}, which alone took {v} of the spend.",
             "ig": "On the organic side, Instagram gained {v} followers over the same range.",
+            "abre_camp": "Between {ini} and {fim}, spend reached {gasto}, {onde}, with {nc} {camp} delivering",
+            "abre_min": "Between {ini} and {fim}, spend in the period reached {gasto}",
+            "onde_uma": "running {plat} campaigns only",
+            "onde_varias": "spread across campaigns on {plats}",
+            "ativas_todas": ", all of them still running",
+            "ativas_todas_uma": ", still running",
+            "ativas_parte": ", {n} of them still running",
+            "adj_ativa": ("running", "running"),
+            "junta": " and ",
         },
     },
 }
@@ -216,15 +240,45 @@ def _visao_geral(payload: dict, by_key: dict, T: dict, f, idioma: str) -> str:
     anuncios = payload.get("anuncios") or []
     frases = []
 
-    abre = V["abre"].format(ini=data(p.get("inicio")), fim=data(p.get("fim")),
-                            gasto=f(cur("spend"), "currency"),
-                            nc=f(len(campanhas), "int"), camp=plural(len(campanhas), V["campanha"]),
-                            na=f(len(anuncios), "int"), anun=plural(len(anuncios), V["anuncio"]))
-    ativos = sum(1 for a in anuncios if a.get("ativo"))
-    if anuncios and ativos == len(anuncios):
-        abre += V["ativos_todos"]
-    elif ativos:
-        abre += V["ativos_parte"].format(n=f(ativos, "int"))
+    ini, fim, gasto = data(p.get("inicio")), data(p.get("fim")), f(cur("spend"), "currency")
+    if anuncios:
+        abre = V["abre"].format(ini=ini, fim=fim, gasto=gasto,
+                                nc=f(len(campanhas), "int"), camp=plural(len(campanhas), V["campanha"]),
+                                na=f(len(anuncios), "int"), anun=plural(len(anuncios), V["anuncio"]))
+        ativos = sum(1 for a in anuncios if a.get("ativo"))
+        if ativos == len(anuncios):
+            abre += V["ativos_todos"] if ativos > 1 else V["ativos_todos_um"]
+        elif ativos:
+            abre += V["ativos_parte"].format(n=f(ativos, "int"),
+                                             adj=plural(ativos, V["adj_ativo"]))
+    elif campanhas:
+        # O Google entrega dados no nivel de campanha, nao de anuncio: numa conta so de
+        # Google a contagem de anuncios e sempre zero. Dizer "3 campanhas e 0 anuncios"
+        # seria um dado frio e enganoso, entao aqui o texto conta campanhas e nomeia a
+        # plataforma em que elas rodam.
+        plats = []
+        for c in campanhas:
+            nome = str(c.get("plataforma") or "").strip()
+            if nome and nome not in plats:
+                plats.append(nome)
+        if len(plats) == 1:
+            onde = V["onde_uma"].format(plat=plats[0])
+        else:
+            lista = (V["junta"].join([", ".join(plats[:-1]), plats[-1]]) if len(plats) > 2
+                     else V["junta"].join(plats))
+            onde = V["onde_varias"].format(plats=lista)
+        abre = V["abre_camp"].format(ini=ini, fim=fim, gasto=gasto, onde=onde,
+                                     nc=f(len(campanhas), "int"),
+                                     camp=plural(len(campanhas), V["campanha"]))
+        ativas = sum(1 for c in campanhas if c.get("ativo"))
+        if ativas == len(campanhas):
+            abre += V["ativas_todas"] if ativas > 1 else V["ativas_todas_uma"]
+        elif ativas:
+            abre += V["ativas_parte"].format(n=f(ativas, "int"),
+                                             adj=plural(ativas, V["adj_ativa"]))
+    else:
+        # Sem tabela nenhuma no periodo: so o investimento, sem contagens vazias.
+        abre = V["abre_min"].format(ini=ini, fim=fim, gasto=gasto)
     frases.append(abre + ".")
 
     impr, cliques, ctr = cur("impressions"), cur("clicks"), cur("ctr")

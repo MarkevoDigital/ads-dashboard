@@ -120,6 +120,7 @@ TEXTOS = {
             # em campanhas e diz onde elas rodam, em vez de anunciar "0 anuncios".
             "abre_camp": "Entre {ini} e {fim}, o investimento foi de {gasto}, {onde}, com {nc} {camp} em veiculação",
             "abre_min": "Entre {ini} e {fim}, o investimento no período foi de {gasto}",
+            "sem_veiculacao": "Entre {ini} e {fim} não houve veiculação de anúncios nesta conta",
             "onde_uma": "rodando apenas campanhas no {plat}",
             "onde_varias": "distribuído em campanhas de {plats}",
             "ativas_todas": ", todas ativas agora",
@@ -194,6 +195,7 @@ TEXTOS = {
             "ig": "On the organic side, Instagram gained {v} followers over the same range.",
             "abre_camp": "Between {ini} and {fim}, spend reached {gasto}, {onde}, with {nc} {camp} delivering",
             "abre_min": "Between {ini} and {fim}, spend in the period reached {gasto}",
+            "sem_veiculacao": "No ads ran on this account between {ini} and {fim}",
             "onde_uma": "running {plat} campaigns only",
             "onde_varias": "spread across campaigns on {plats}",
             "ativas_todas": ", all of them still running",
@@ -276,8 +278,13 @@ def _visao_geral(payload: dict, by_key: dict, T: dict, f, idioma: str) -> str:
         elif ativas:
             abre += V["ativas_parte"].format(n=f(ativas, "int"),
                                              adj=plural(ativas, V["adj_ativa"]))
+    elif not cur("spend"):
+        # Nem campanha, nem anuncio, nem investimento: dizer "o investimento foi de R$ 0,00"
+        # e um dado frio que nao ajuda ninguem. O paragrafo afirma o que de fato aconteceu
+        # (nao houve veiculacao) e segue para o que existir, como o organico do Instagram.
+        abre = V["sem_veiculacao"].format(ini=ini, fim=fim)
     else:
-        # Sem tabela nenhuma no periodo: so o investimento, sem contagens vazias.
+        # Houve investimento, mas nenhuma linha nas tabelas: so o valor, sem contagens vazias.
         abre = V["abre_min"].format(ini=ini, fim=fim, gasto=gasto)
     frases.append(abre + ".")
 

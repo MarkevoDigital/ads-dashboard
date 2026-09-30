@@ -612,7 +612,15 @@ def _merge_historico(antigo: pd.DataFrame, novo: pd.DataFrame, dias_hist: int) -
         base = antigo
     else:
         corte = pd.to_datetime(novo["date"]).min()
-        anteriores = antigo[pd.to_datetime(antigo["date"]) < corte]
+        guardar = pd.to_datetime(antigo["date"]) < corte
+        # Conta que FALHOU nesta coleta (a API devolveu erro e o conector a ignorou) nao
+        # pode ser apagada: numa carga longa a janela nova cobre todo o historico e o
+        # cliente daquela conta ficaria com o dashboard vazio. Mantemos as linhas antigas
+        # das contas que nao vieram agora; as que vieram sao substituidas normalmente.
+        if "account_id" in antigo.columns and "account_id" in novo.columns:
+            vieram = set(novo["account_id"].astype(str))
+            guardar = guardar | ~antigo["account_id"].astype(str).isin(vieram)
+        anteriores = antigo[guardar]
         base = pd.concat([anteriores, novo], ignore_index=True) if len(anteriores) else novo
     if base is None or base.empty or not dias_hist:
         return base

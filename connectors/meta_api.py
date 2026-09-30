@@ -262,6 +262,19 @@ def _first_action(actions, keys) -> float:
     return 0.0
 
 
+def _corpo_json(resp):
+    """resp.json() que nunca escapa como ValueError.
+
+    Uma resposta truncada/corrompida (ja vimos "Extra data: line 1 column 36805") fazia
+    o json.JSONDecodeError subir direto ate o try/except por conta, que ignorava a CONTA
+    INTEIRA sem re-tentar. Virando RuntimeError, a mesma resposta passa pelo backoff e
+    pela bisseccao de _insights_windowed, como qualquer outro erro instavel da Graph."""
+    try:
+        return resp.json()
+    except ValueError as exc:
+        raise RuntimeError(f"Meta API resposta ilegivel: {exc}") from exc
+
+
 def _paged_get(url, params):
     """Itera por todas as paginas de uma resposta paginada da Graph API."""
     out = []
@@ -269,7 +282,7 @@ def _paged_get(url, params):
         resp = requests.get(url, params=params, timeout=60)
         if resp.status_code != 200:
             raise RuntimeError(f"Meta API {resp.status_code}: {resp.text[:300]}")
-        body = resp.json()
+        body = _corpo_json(resp)
         out.extend(body.get("data", []))
         url = body.get("paging", {}).get("next")
         params = None  # 'next' ja contem a querystring
@@ -281,6 +294,7 @@ def _paged_get(url, params):
 # vagas ("reduce the amount of data", "unexpected error", subcodes 99/1504044, code 2).
 _BISECT_HINTS = (
     "reduce the amount of data", "error_subcode\":99", "an unknown error",
+    "resposta ilegivel",  # corpo truncado: quase sempre pagina grande demais
     "service temporarily unavailable", "1504044", "unexpected error",
     "ocorreu um erro", "tente novamente",
 )
@@ -385,7 +399,7 @@ def _thumbnails(account_id, token, version) -> dict:
                 resp = requests.get(url, params=params, timeout=60)
                 if resp.status_code != 200:
                     raise RuntimeError(f"Meta API {resp.status_code}: {resp.text[:200]}")
-                body = resp.json()
+                body = _corpo_json(resp)
                 for ad in body.get("data", []):
                     cre = ad.get("creative", {}) or {}
                     mapa[ad["id"]] = {

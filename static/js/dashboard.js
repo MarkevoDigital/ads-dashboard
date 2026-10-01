@@ -1053,8 +1053,15 @@
     sec.classList.remove("hidden");
     if (!geoMap) {
       geoMap = L.map("geo-map", { scrollWheelZoom: false }).setView([-15.6, -47.8], 4);
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-        { maxZoom: 18, crossOrigin: true, attribution: "© OpenStreetMap · © CARTO" }).addTo(geoMap);
+      // Fundo do mapa: Esri "World Dark Gray Canvas". A CARTO (usada antes) passou a
+      // exigir chave de API e devolve o tile com "API KEY REQUIRED" carimbado, entao o
+      // mapa aparecia ilegivel. Este serve sem chave e ja e escuro de origem — nada de
+      // filtro CSS, que mexeria tambem na cor das bolhas. Esri usa {z}/{y}/{x} (y antes
+      // de x) e nao tem tile @2x, por isso sai o {r}.
+      L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/"
+        + "Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 16, crossOrigin: true,
+          attribution: "Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap" }).addTo(geoMap);
     }
     // A seção acabou de sair de "hidden": sem isto o Leaflet mede o container com 0px
     // e o enquadramento abaixo sai errado.

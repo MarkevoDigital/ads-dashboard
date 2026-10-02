@@ -115,7 +115,8 @@ TEXTOS = {
             "dia": ("dia", "dias"),
             "dia_verbo": ("ficou", "ficaram"),
             "pico": "O melhor dia foi {data}, que sozinho respondeu por {v} do investimento.",
-            "ig": "No orgânico, o Instagram ganhou {v} seguidores no mesmo intervalo.",
+            "ig": "O Instagram ganhou {v} {seg} no total.",
+            "ig_seguidor": ("novo seguidor", "novos seguidores"),
             # Conta sem dados por anuncio (o Google e nivel campanha): o paragrafo fala
             # em campanhas e diz onde elas rodam, em vez de anunciar "0 anuncios".
             "abre_camp": "Entre {ini} e {fim}, o investimento foi de {gasto}, {onde}, com {nc} {camp} em veiculação",
@@ -192,7 +193,8 @@ TEXTOS = {
             "dia": ("day", "days"),
             "dia_verbo": ("went", "went"),
             "pico": "The strongest day was {data}, which alone took {v} of the spend.",
-            "ig": "On the organic side, Instagram gained {v} followers over the same range.",
+            "ig": "Instagram gained {v} {seg} in total.",
+            "ig_seguidor": ("new follower", "new followers"),
             "abre_camp": "Between {ini} and {fim}, spend reached {gasto}, {onde}, with {nc} {camp} delivering",
             "abre_min": "Between {ini} and {fim}, spend in the period reached {gasto}",
             "sem_veiculacao": "No ads ran on this account between {ini} and {fim}",
@@ -331,7 +333,9 @@ def _visao_geral(payload: dict, by_key: dict, T: dict, f, idioma: str) -> str:
 
     ig = payload.get("instagram") or {}
     if int(ig.get("novos") or 0) > 0:
-        frases.append(V["ig"].format(v=f(ig["novos"], "int")))
+        novos_ig = int(ig["novos"])
+        frases.append(V["ig"].format(v=f(novos_ig, "int"),
+                                     seg=plural(novos_ig, V["ig_seguidor"])))
 
     return " ".join(frases)
 

@@ -4,7 +4,9 @@ Serve para conferir como o paragrafo abre em cada conta — em especial as que s
 Google, onde contar anuncios daria sempre zero e o texto passa a falar em campanhas.
 
 Uso (no servidor, dentro de ~/dashboard-ads):
-  OPENBLAS_NUM_THREADS=1 <python da venv> tools/visao_geral_diag.py [dias]
+  OPENBLAS_NUM_THREADS=1 <python da venv> tools/visao_geral_diag.py [dias] [cliente]
+Com o nome (ou pedaco do nome) de um cliente, imprime o PARAGRAFO INTEIRO so dele —
+util para conferir as frases do fim, como a do Instagram.
 Nao mostra senhas nem tokens."""
 import os
 import sys
@@ -29,11 +31,14 @@ import commentary  # noqa: E402
 import data_sources as d  # noqa: E402
 
 dias = int(sys.argv[1]) if len(sys.argv) > 1 else 30
+alvo = sys.argv[2].lower() if len(sys.argv) > 2 else ""
 clientes = d.load_clients()
 store = d.DataStore(d.load_config())
 print("cache:", store.load_cache(max_age_h=9999), "| atualizado:", store.updated_at)
 
 for c in clientes.get("clientes", []):
+    if alvo and alvo not in c["key"].lower():
+        continue
     sc = {"meta_ids": c.get("_meta_ids", set()), "google_ids": c.get("_google_ids", set()),
           "tiktok_ids": c.get("_tiktok_ids", set()), "linkedin_ids": c.get("_linkedin_ids", set()),
           "instagram_ids": c.get("_instagram_ids", set()),
@@ -45,9 +50,10 @@ for c in clientes.get("clientes", []):
             print(f"{c['key']:26} (sem dados no periodo)")
             continue
         texto = commentary.generate(p, c.get("idioma", "pt")).get("visao_geral") or ""
-        frase = texto.split(". ")[0]
+        # Sem filtro, uma linha por cliente (a abertura); com filtro, o paragrafo todo.
+        frase = texto if alvo else texto.split(". ")[0]
         plats = sorted({b["plataforma"] for b in p.get("resumo_plataformas", [])})
         print(f"{c['key']:26} camp={len(p.get('campanhas') or []):3} "
-              f"ads={len(p.get('anuncios') or []):3} {plats}\n    {frase}.")
+              f"ads={len(p.get('anuncios') or []):3} {plats}\n    {frase}" + ("" if alvo else "."))
     except Exception as exc:  # noqa: BLE001
         print(f"{c['key']:26} ERRO {exc}")

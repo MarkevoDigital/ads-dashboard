@@ -301,15 +301,23 @@ tbody tr:hover { background: var(--panel-2); }
 .leaflet-container { background: #0c1018; }
 
 /* ============================================================
-   Impressao / "Exportar em PDF" — papel CARTA, sem margens,
-   graficos de fundo ativados. O topo do dashboard (nome da conta,
-   seletor de datas, botoes) e OCULTADO; entra o cabecalho do
-   relatorio ("Relatorio de Trafego Pago" + cliente). 100% no
-   navegador (window.print) — nao gera nenhuma carga no servidor.
+   Impressao / "Exportar em PDF" — sem margens, graficos de fundo
+   ativados. O topo do dashboard (nome da conta, seletor de datas,
+   botoes) e OCULTADO; entra o cabecalho do relatorio ("Relatorio
+   de Trafego Pago" + cliente). 100% no navegador (window.print) —
+   nao gera nenhuma carga no servidor.
+
+   TAMANHO E ORIENTACAO ficam a cargo de quem imprime. Fixar
+   "size: letter landscape" aqui fazia o PDF sair girado (de cabeca
+   para baixo) em parte dos navegadores/impressoras, e ainda brigava
+   com a escolha feita na propria caixa de dialogo. Sem a regra, o
+   dialogo abre no padrao do navegador e o formato e a orientacao
+   podem ser ajustados antes de salvar. O layout abaixo se vira nas
+   duas orientacoes.
    ============================================================ */
 #report-head { display: none; }
 
-@page { size: letter landscape; margin: 0; }
+@page { margin: 0; }
 
 @media print {
   /* Forca a impressao das cores/fundos (tema escuro) em vez de fundo branco. */
@@ -334,11 +342,16 @@ tbody tr:hover { background: var(--panel-2); }
   #report-head #report-client { margin: 5px 0 0; font-size: 16px; font-weight: 600; color: var(--brand); }
   #report-head #report-period { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
 
-  /* Enquadramento: usa a largura toda da folha (carta PAISAGEM), sem max-width
-     nem scroll lateral. Paisagem da largura de sobra p/ os dados nao ficarem
-     espremidos. Blocos em duas colunas continuam lado a lado (cabem folgados). */
+  /* Enquadramento: usa a largura toda da folha, sem max-width nem scroll lateral.
+     Em retrato a folha e estreita, entao os blocos de duas colunas passam a uma
+     so — lado a lado eles ficariam espremidos demais para ler. */
   main#app { max-width: none !important; margin: 0 !important; padding: 0 14px 14px !important; gap: 12px !important; }
   .two-col { grid-template-columns: 1fr 1fr !important; gap: 14px !important; }
+
+  /* 23cm fica entre o retrato (A4 21cm, carta 21,6cm) e a paisagem (27,9/29,7cm). */
+  @media (max-width: 23cm) {
+    .two-col { grid-template-columns: 1fr !important; }
+  }
 
   /* Tabelas nunca cortam na horizontal; as colunas se ajustam a folha. */
   .table-wrap { overflow: visible !important; }

@@ -1162,8 +1162,9 @@
   });
 
   // ---- Exportar em PDF (impressão nativa) ----
-  // Usa window.print() + CSS @media print (papel carta, sem margens, fundo
-  // ativado). Não rasteriza a tela (texto vetorial, sem cortes) e NÃO gera
+  // Usa window.print() + CSS @media print (sem margens, fundo ativado). Tamanho e
+  // orientação do papel ficam na caixa de diálogo do navegador, por conta de quem
+  // imprime. Não rasteriza a tela (texto vetorial, sem cortes) e NÃO gera
   // nenhuma carga no servidor. Os gráficos (Chart.js/Leaflet) são
   // redimensionados p/ a largura da folha no evento beforeprint.
   const resizeCharts = () => {
